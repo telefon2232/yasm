@@ -37,6 +37,7 @@ module.exports = __toCommonJS(extension_exports);
 var vscode3 = __toESM(require("vscode"));
 var path3 = __toESM(require("path"));
 var fs3 = __toESM(require("fs"));
+var os = __toESM(require("os"));
 
 // src/config.ts
 var vscode = __toESM(require("vscode"));
@@ -563,6 +564,14 @@ var currentConfig;
 var binaryWatcher;
 var asmFilePath;
 var statusBarItem;
+var diffDecorations1;
+var diffDecorations2;
+var diffMapper1;
+var diffMapper2;
+var diffAsmEditor1;
+var diffAsmEditor2;
+var diffAsmPath1;
+var diffAsmPath2;
 function activate(context) {
   decorations = new DecorationManager();
   context.subscriptions.push(decorations);
@@ -660,20 +669,40 @@ async function cmdDiffAssembly() {
       const funcs1 = parseObjdumpOutput(raw1, tool.type);
       const funcs2 = parseObjdumpOutput(raw2, tool.type);
       const sourceRoot = config?.sourceRoot || vscode3.workspace.workspaceFolders?.[0]?.uri.fsPath || ".";
-      const mapper1 = new SourceAsmMapper(sourceRoot);
-      const mapper2 = new SourceAsmMapper(sourceRoot);
-      const text1 = mapper1.build(funcs1);
-      const text2 = mapper2.build(funcs2);
-      const asmPath1 = binary1.replace(/(\.[^.]+)?$/, ".asm");
-      const asmPath2 = binary2.replace(/(\.[^.]+)?$/, ".asm");
-      fs3.writeFileSync(asmPath1, text1, "utf-8");
-      fs3.writeFileSync(asmPath2, text2, "utf-8");
-      const uri1 = vscode3.Uri.file(asmPath1);
-      const uri2 = vscode3.Uri.file(asmPath2);
-      const title = `${path3.basename(binary1)} vs ${path3.basename(binary2)}`;
-      await vscode3.commands.executeCommand("vscode.diff", uri1, uri2, title);
+      diffMapper1 = new SourceAsmMapper(sourceRoot);
+      diffMapper2 = new SourceAsmMapper(sourceRoot);
+      const text1 = diffMapper1.build(funcs1);
+      const text2 = diffMapper2.build(funcs2);
+      const tmpDir = os.tmpdir();
+      const name1 = path3.basename(binary1);
+      const name2 = path3.basename(binary2);
+      diffAsmPath1 = path3.join(tmpDir, `${name1}_left.asm`);
+      diffAsmPath2 = path3.join(tmpDir, `${name2}_right.asm`);
+      fs3.writeFileSync(diffAsmPath1, text1, "utf-8");
+      fs3.writeFileSync(diffAsmPath2, text2, "utf-8");
+      diffDecorations1?.dispose();
+      diffDecorations2?.dispose();
+      diffDecorations1 = new DecorationManager();
+      diffDecorations2 = new DecorationManager();
+      const doc1 = await vscode3.workspace.openTextDocument(
+        vscode3.Uri.file(diffAsmPath1)
+      );
+      diffAsmEditor1 = await vscode3.window.showTextDocument(doc1, {
+        viewColumn: vscode3.ViewColumn.Two,
+        preserveFocus: true,
+        preview: false
+      });
+      const doc2 = await vscode3.workspace.openTextDocument(
+        vscode3.Uri.file(diffAsmPath2)
+      );
+      diffAsmEditor2 = await vscode3.window.showTextDocument(doc2, {
+        viewColumn: vscode3.ViewColumn.Three,
+        preserveFocus: true,
+        preview: false
+      });
+      applyDiffColors();
       vscode3.window.showInformationMessage(
-        `ASM Lens Diff: ${funcs1.length} vs ${funcs2.length} functions`
+        `ASM Lens Diff: ${name1} (${funcs1.length} funcs) vs ${name2} (${funcs2.length} funcs)`
       );
     } finally {
       statusMsg.dispose();
@@ -681,6 +710,40 @@ async function cmdDiffAssembly() {
   } catch (err) {
     vscode3.window.showErrorMessage(`ASM Lens Diff: ${err.message}`);
   }
+}
+function applyDiffColors() {
+  const sourceEditor = findSourceEditor();
+  if (!sourceEditor)
+    return;
+  const filePath = sourceEditor.document.uri.fsPath;
+  if (diffMapper1 && diffAsmEditor1 && diffDecorations1) {
+    const entries = buildMappingEntries(diffMapper1, filePath);
+    diffDecorations1.applyColorMapping(sourceEditor, diffAsmEditor1, entries);
+  }
+  if (diffMapper2 && diffAsmEditor2 && diffDecorations2) {
+    const entries = buildMappingEntries(diffMapper2, filePath);
+    diffDecorations2.applyColorMapping(sourceEditor, diffAsmEditor2, entries);
+  }
+}
+function buildMappingEntries(m, filePath) {
+  const normFile = m.normalizePath(filePath);
+  const sourceToAsm = m.getSourceToAsmMap();
+  const entries = [];
+  for (const [key, asmLines] of sourceToAsm) {
+    const lastColon = key.lastIndexOf(":");
+    if (lastColon === -1)
+      continue;
+    const keyFile = key.substring(0, lastColon);
+    const keyLine = parseInt(key.substring(lastColon + 1), 10);
+    if (keyFile !== normFile)
+      continue;
+    entries.push({
+      sourceKey: key,
+      sourceLine: keyLine - 1,
+      asmLines
+    });
+  }
+  return entries;
 }
 async function loadAndShow() {
   const config = await loadConfig();
@@ -731,25 +794,7 @@ function applyColors() {
   const sourceEditor = findSourceEditor();
   if (!sourceEditor || !asmEditor || !mapper)
     return;
-  const filePath = sourceEditor.document.uri.fsPath;
-  const normFile = mapper.normalizePath(filePath);
-  const sourceToAsm = mapper.getSourceToAsmMap();
-  const entries = [];
-  for (const [key, asmLines] of sourceToAsm) {
-    const lastColon = key.lastIndexOf(":");
-    if (lastColon === -1)
-      continue;
-    const keyFile = key.substring(0, lastColon);
-    const keyLine = parseInt(key.substring(lastColon + 1), 10);
-    if (keyFile !== normFile)
-      continue;
-    entries.push({
-      sourceKey: key,
-      sourceLine: keyLine - 1,
-      // DWARF 1-based → editor 0-based
-      asmLines
-    });
-  }
+  const entries = buildMappingEntries(mapper, sourceEditor.document.uri.fsPath);
   decorations.applyColorMapping(sourceEditor, asmEditor, entries);
 }
 function setupBinaryWatcher(binaryPath) {
@@ -767,15 +812,75 @@ function setupBinaryWatcher(binaryPath) {
   });
 }
 function onSelectionChanged(event) {
-  if (!mapper || !asmEditor)
-    return;
   const editor = event.textEditor;
   const line = event.selections[0].active.line;
-  if (asmFilePath && editor.document.uri.fsPath === asmFilePath) {
-    handleAsmClick(line);
-  } else if (isSourceEditor(editor)) {
-    handleSourceClick(editor, line);
+  const editorPath = editor.document.uri.fsPath;
+  if (mapper && asmEditor) {
+    if (asmFilePath && editorPath === asmFilePath) {
+      handleAsmClick(line);
+      return;
+    }
   }
+  if (diffAsmPath1 && editorPath === diffAsmPath1 && diffMapper1) {
+    handleDiffAsmClick(diffMapper1, diffDecorations1, diffAsmEditor1, line);
+    return;
+  }
+  if (diffAsmPath2 && editorPath === diffAsmPath2 && diffMapper2) {
+    handleDiffAsmClick(diffMapper2, diffDecorations2, diffAsmEditor2, line);
+    return;
+  }
+  if (isSourceEditor(editor)) {
+    if (mapper && asmEditor) {
+      handleSourceClick(editor, line);
+    }
+    if (diffMapper1 && diffAsmEditor1 && diffDecorations1) {
+      handleDiffSourceClick(
+        editor,
+        line,
+        diffMapper1,
+        diffDecorations1,
+        diffAsmEditor1
+      );
+    }
+    if (diffMapper2 && diffAsmEditor2 && diffDecorations2) {
+      handleDiffSourceClick(
+        editor,
+        line,
+        diffMapper2,
+        diffDecorations2,
+        diffAsmEditor2
+      );
+    }
+  }
+}
+function handleDiffSourceClick(sourceEditor, line, m, dec, asmEd) {
+  const filePath = sourceEditor.document.uri.fsPath;
+  const asmLines = m.getAsmLinesForSource(filePath, line + 1);
+  if (asmLines.length > 0) {
+    const normFile = m.normalizePath(filePath);
+    const sourceKey = `${normFile}:${line + 1}`;
+    dec.highlightHover(sourceEditor, asmEd, sourceKey, line, asmLines);
+    dec.scrollTo(asmEd, asmLines[0]);
+  } else {
+    dec.clearHover(sourceEditor, asmEd);
+  }
+}
+function handleDiffAsmClick(m, dec, asmEd, asmLine) {
+  if (!dec || !asmEd)
+    return;
+  const source = m.getSourceForAsmLine(asmLine);
+  const sourceEditor = findSourceEditor();
+  if (!source || !sourceEditor) {
+    if (sourceEditor)
+      dec.clearHover(sourceEditor, asmEd);
+    return;
+  }
+  const absPath = m.resolveToWorkspace(source.file);
+  const editorLine = source.line - 1;
+  const asmLines = m.getAsmLinesForSource(absPath, source.line);
+  const sourceKey = `${source.file}:${source.line}`;
+  dec.highlightHover(sourceEditor, asmEd, sourceKey, editorLine, asmLines);
+  dec.scrollTo(sourceEditor, editorLine);
 }
 function handleSourceClick(sourceEditor, line) {
   if (!mapper || !asmEditor)

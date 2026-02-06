@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import { loadConfig, getConfigPath, initConfig, AsmLensConfig } from "./config";
 import { detectObjdump } from "./toolDetector";
 import { disassemble, invalidateCache } from "./disassemblyProvider";
@@ -15,6 +16,16 @@ let currentConfig: AsmLensConfig | undefined;
 let binaryWatcher: vscode.FileSystemWatcher | undefined;
 let asmFilePath: string | undefined;
 let statusBarItem: vscode.StatusBarItem;
+
+// Diff mode state
+let diffDecorations1: DecorationManager | undefined;
+let diffDecorations2: DecorationManager | undefined;
+let diffMapper1: SourceAsmMapper | undefined;
+let diffMapper2: SourceAsmMapper | undefined;
+let diffAsmEditor1: vscode.TextEditor | undefined;
+let diffAsmEditor2: vscode.TextEditor | undefined;
+let diffAsmPath1: string | undefined;
+let diffAsmPath2: string | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   decorations = new DecorationManager();
@@ -139,25 +150,53 @@ async function cmdDiffAssembly(): Promise<void> {
         config?.sourceRoot ||
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
         ".";
-      const mapper1 = new SourceAsmMapper(sourceRoot);
-      const mapper2 = new SourceAsmMapper(sourceRoot);
-      const text1 = mapper1.build(funcs1);
-      const text2 = mapper2.build(funcs2);
 
-      // Сохраняем .asm файлы рядом с бинарниками
-      const asmPath1 = binary1.replace(/(\.[^.]+)?$/, ".asm");
-      const asmPath2 = binary2.replace(/(\.[^.]+)?$/, ".asm");
-      fs.writeFileSync(asmPath1, text1, "utf-8");
-      fs.writeFileSync(asmPath2, text2, "utf-8");
+      // Создаём mappers и генерируем asm текст
+      diffMapper1 = new SourceAsmMapper(sourceRoot);
+      diffMapper2 = new SourceAsmMapper(sourceRoot);
+      const text1 = diffMapper1.build(funcs1);
+      const text2 = diffMapper2.build(funcs2);
 
-      // Открываем встроенный diff editor VS Code
-      const uri1 = vscode.Uri.file(asmPath1);
-      const uri2 = vscode.Uri.file(asmPath2);
-      const title = `${path.basename(binary1)} vs ${path.basename(binary2)}`;
-      await vscode.commands.executeCommand("vscode.diff", uri1, uri2, title);
+      // Сохраняем .asm файлы в temp с уникальными именами
+      const tmpDir = os.tmpdir();
+      const name1 = path.basename(binary1);
+      const name2 = path.basename(binary2);
+      diffAsmPath1 = path.join(tmpDir, `${name1}_left.asm`);
+      diffAsmPath2 = path.join(tmpDir, `${name2}_right.asm`);
+      fs.writeFileSync(diffAsmPath1, text1, "utf-8");
+      fs.writeFileSync(diffAsmPath2, text2, "utf-8");
+
+      // Очищаем предыдущие diff decorations
+      diffDecorations1?.dispose();
+      diffDecorations2?.dispose();
+      diffDecorations1 = new DecorationManager();
+      diffDecorations2 = new DecorationManager();
+
+      // Открываем первый asm справа от исходника
+      const doc1 = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(diffAsmPath1),
+      );
+      diffAsmEditor1 = await vscode.window.showTextDocument(doc1, {
+        viewColumn: vscode.ViewColumn.Two,
+        preserveFocus: true,
+        preview: false,
+      });
+
+      // Открываем второй asm ещё правее
+      const doc2 = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(diffAsmPath2),
+      );
+      diffAsmEditor2 = await vscode.window.showTextDocument(doc2, {
+        viewColumn: vscode.ViewColumn.Three,
+        preserveFocus: true,
+        preview: false,
+      });
+
+      // Применяем цветовой маппинг на оба asm-редактора
+      applyDiffColors();
 
       vscode.window.showInformationMessage(
-        `ASM Lens Diff: ${funcs1.length} vs ${funcs2.length} functions`,
+        `ASM Lens Diff: ${name1} (${funcs1.length} funcs) vs ${name2} (${funcs2.length} funcs)`,
       );
     } finally {
       statusMsg.dispose();
@@ -165,6 +204,52 @@ async function cmdDiffAssembly(): Promise<void> {
   } catch (err: any) {
     vscode.window.showErrorMessage(`ASM Lens Diff: ${err.message}`);
   }
+}
+
+/** Применяет цветовой маппинг исходник↔asm для обоих diff-редакторов */
+function applyDiffColors(): void {
+  const sourceEditor = findSourceEditor();
+  if (!sourceEditor) return;
+
+  const filePath = sourceEditor.document.uri.fsPath;
+
+  if (diffMapper1 && diffAsmEditor1 && diffDecorations1) {
+    const entries = buildMappingEntries(diffMapper1, filePath);
+    diffDecorations1.applyColorMapping(sourceEditor, diffAsmEditor1, entries);
+  }
+
+  if (diffMapper2 && diffAsmEditor2 && diffDecorations2) {
+    const entries = buildMappingEntries(diffMapper2, filePath);
+    diffDecorations2.applyColorMapping(sourceEditor, diffAsmEditor2, entries);
+  }
+}
+
+/** Строит MappingEntry[] из mapper для конкретного source-файла */
+function buildMappingEntries(
+  m: SourceAsmMapper,
+  filePath: string,
+): MappingEntry[] {
+  const normFile = m.normalizePath(filePath);
+  const sourceToAsm = m.getSourceToAsmMap();
+  const entries: MappingEntry[] = [];
+
+  for (const [key, asmLines] of sourceToAsm) {
+    const lastColon = key.lastIndexOf(":");
+    if (lastColon === -1) continue;
+
+    const keyFile = key.substring(0, lastColon);
+    const keyLine = parseInt(key.substring(lastColon + 1), 10);
+
+    if (keyFile !== normFile) continue;
+
+    entries.push({
+      sourceKey: key,
+      sourceLine: keyLine - 1,
+      asmLines,
+    });
+  }
+
+  return entries;
 }
 
 async function loadAndShow(): Promise<void> {
@@ -227,38 +312,11 @@ async function loadAndShow(): Promise<void> {
   );
 }
 
-/**
- * Build mapping entries directly from mapper data and apply color decorations.
- * Uses mapper.getSourceToAsmMap() which has keys like "main.c:5" (normalized relative paths).
- */
 function applyColors(): void {
   const sourceEditor = findSourceEditor();
   if (!sourceEditor || !asmEditor || !mapper) return;
 
-  const filePath = sourceEditor.document.uri.fsPath;
-  const normFile = mapper.normalizePath(filePath);
-
-  const sourceToAsm = mapper.getSourceToAsmMap();
-  const entries: MappingEntry[] = [];
-
-  for (const [key, asmLines] of sourceToAsm) {
-    // key = "main.c:5" — extract file and line parts
-    const lastColon = key.lastIndexOf(":");
-    if (lastColon === -1) continue;
-
-    const keyFile = key.substring(0, lastColon);
-    const keyLine = parseInt(key.substring(lastColon + 1), 10);
-
-    // Only include entries belonging to the current source file
-    if (keyFile !== normFile) continue;
-
-    entries.push({
-      sourceKey: key,
-      sourceLine: keyLine - 1, // DWARF 1-based → editor 0-based
-      asmLines,
-    });
-  }
-
+  const entries = buildMappingEntries(mapper, sourceEditor.document.uri.fsPath);
   decorations.applyColorMapping(sourceEditor, asmEditor, entries);
 }
 
@@ -282,17 +340,97 @@ function setupBinaryWatcher(binaryPath: string): void {
 function onSelectionChanged(
   event: vscode.TextEditorSelectionChangeEvent,
 ): void {
-  if (!mapper || !asmEditor) return;
-
   const editor = event.textEditor;
   const line = event.selections[0].active.line;
+  const editorPath = editor.document.uri.fsPath;
 
-  // Check if this is the asm editor by file path
-  if (asmFilePath && editor.document.uri.fsPath === asmFilePath) {
-    handleAsmClick(line);
-  } else if (isSourceEditor(editor)) {
-    handleSourceClick(editor, line);
+  // Основной asm editor
+  if (mapper && asmEditor) {
+    if (asmFilePath && editorPath === asmFilePath) {
+      handleAsmClick(line);
+      return;
+    }
   }
+
+  // Diff asm editors
+  if (diffAsmPath1 && editorPath === diffAsmPath1 && diffMapper1) {
+    handleDiffAsmClick(diffMapper1, diffDecorations1, diffAsmEditor1, line);
+    return;
+  }
+  if (diffAsmPath2 && editorPath === diffAsmPath2 && diffMapper2) {
+    handleDiffAsmClick(diffMapper2, diffDecorations2, diffAsmEditor2, line);
+    return;
+  }
+
+  // Исходник — обновляем все активные маппинги
+  if (isSourceEditor(editor)) {
+    if (mapper && asmEditor) {
+      handleSourceClick(editor, line);
+    }
+    if (diffMapper1 && diffAsmEditor1 && diffDecorations1) {
+      handleDiffSourceClick(
+        editor,
+        line,
+        diffMapper1,
+        diffDecorations1,
+        diffAsmEditor1,
+      );
+    }
+    if (diffMapper2 && diffAsmEditor2 && diffDecorations2) {
+      handleDiffSourceClick(
+        editor,
+        line,
+        diffMapper2,
+        diffDecorations2,
+        diffAsmEditor2,
+      );
+    }
+  }
+}
+
+function handleDiffSourceClick(
+  sourceEditor: vscode.TextEditor,
+  line: number,
+  m: SourceAsmMapper,
+  dec: DecorationManager,
+  asmEd: vscode.TextEditor,
+): void {
+  const filePath = sourceEditor.document.uri.fsPath;
+  const asmLines = m.getAsmLinesForSource(filePath, line + 1);
+
+  if (asmLines.length > 0) {
+    const normFile = m.normalizePath(filePath);
+    const sourceKey = `${normFile}:${line + 1}`;
+    dec.highlightHover(sourceEditor, asmEd, sourceKey, line, asmLines);
+    dec.scrollTo(asmEd, asmLines[0]);
+  } else {
+    dec.clearHover(sourceEditor, asmEd);
+  }
+}
+
+function handleDiffAsmClick(
+  m: SourceAsmMapper,
+  dec: DecorationManager | undefined,
+  asmEd: vscode.TextEditor | undefined,
+  asmLine: number,
+): void {
+  if (!dec || !asmEd) return;
+
+  const source = m.getSourceForAsmLine(asmLine);
+  const sourceEditor = findSourceEditor();
+
+  if (!source || !sourceEditor) {
+    if (sourceEditor) dec.clearHover(sourceEditor, asmEd);
+    return;
+  }
+
+  const absPath = m.resolveToWorkspace(source.file);
+  const editorLine = source.line - 1;
+  const asmLines = m.getAsmLinesForSource(absPath, source.line);
+  const sourceKey = `${source.file}:${source.line}`;
+
+  dec.highlightHover(sourceEditor, asmEd, sourceKey, editorLine, asmLines);
+  dec.scrollTo(sourceEditor, editorLine);
 }
 
 function handleSourceClick(
