@@ -562,13 +562,21 @@ var asmEditor;
 var currentConfig;
 var binaryWatcher;
 var asmFilePath;
+var statusBarItem;
 function activate(context) {
   decorations = new DecorationManager();
   context.subscriptions.push(decorations);
+  statusBarItem = vscode3.window.createStatusBarItem(
+    vscode3.StatusBarAlignment.Left,
+    100
+  );
+  statusBarItem.command = "asm-lens.refresh";
+  context.subscriptions.push(statusBarItem);
   context.subscriptions.push(
     vscode3.commands.registerCommand("asm-lens.showAssembly", cmdShowAssembly),
     vscode3.commands.registerCommand("asm-lens.refresh", cmdRefresh),
-    vscode3.commands.registerCommand("asm-lens.initConfig", initConfig)
+    vscode3.commands.registerCommand("asm-lens.initConfig", initConfig),
+    vscode3.commands.registerCommand("asm-lens.diffAssembly", cmdDiffAssembly)
   );
   context.subscriptions.push(
     vscode3.window.onDidChangeTextEditorSelection(onSelectionChanged)
@@ -583,6 +591,17 @@ function activate(context) {
 }
 function deactivate() {
   binaryWatcher?.dispose();
+  statusBarItem?.hide();
+}
+function updateStatusBar(config, funcCount, toolType) {
+  if (!statusBarItem)
+    return;
+  const binaryName = path3.basename(config.binary);
+  statusBarItem.text = `$(file-binary) ${binaryName} | ${funcCount} funcs | ${toolType}`;
+  statusBarItem.tooltip = `ASM Lens: ${config.binary}
+${funcCount} functions, ${toolType} objdump
+Click to refresh`;
+  statusBarItem.show();
 }
 async function cmdShowAssembly() {
   try {
@@ -599,6 +618,68 @@ async function cmdRefresh() {
     await loadAndShow();
   } catch (err) {
     vscode3.window.showErrorMessage(`ASM Lens: ${err.message}`);
+  }
+}
+async function cmdDiffAssembly() {
+  try {
+    const pick1 = await vscode3.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      title: "Select first binary (e.g. compiled with -O1)"
+    });
+    if (!pick1 || pick1.length === 0)
+      return;
+    const pick2 = await vscode3.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      title: "Select second binary (e.g. compiled with -O2)"
+    });
+    if (!pick2 || pick2.length === 0)
+      return;
+    const binary1 = pick1[0].fsPath;
+    const binary2 = pick2[0].fsPath;
+    let config;
+    const configPath = getConfigPath();
+    if (configPath && fs3.existsSync(configPath)) {
+      try {
+        config = await loadConfig();
+      } catch {
+      }
+    }
+    const tool = await detectObjdump(config?.objdump);
+    const sections = config?.sections || [".text"];
+    const extraArgs = config?.objdumpArgs || [];
+    const statusMsg = vscode3.window.setStatusBarMessage("ASM Lens: Diffing...");
+    try {
+      const [raw1, raw2] = await Promise.all([
+        disassemble(binary1, tool, sections, extraArgs),
+        disassemble(binary2, tool, sections, extraArgs)
+      ]);
+      const funcs1 = parseObjdumpOutput(raw1, tool.type);
+      const funcs2 = parseObjdumpOutput(raw2, tool.type);
+      const sourceRoot = config?.sourceRoot || vscode3.workspace.workspaceFolders?.[0]?.uri.fsPath || ".";
+      const mapper1 = new SourceAsmMapper(sourceRoot);
+      const mapper2 = new SourceAsmMapper(sourceRoot);
+      const text1 = mapper1.build(funcs1);
+      const text2 = mapper2.build(funcs2);
+      const asmPath1 = binary1.replace(/(\.[^.]+)?$/, ".asm");
+      const asmPath2 = binary2.replace(/(\.[^.]+)?$/, ".asm");
+      fs3.writeFileSync(asmPath1, text1, "utf-8");
+      fs3.writeFileSync(asmPath2, text2, "utf-8");
+      const uri1 = vscode3.Uri.file(asmPath1);
+      const uri2 = vscode3.Uri.file(asmPath2);
+      const title = `${path3.basename(binary1)} vs ${path3.basename(binary2)}`;
+      await vscode3.commands.executeCommand("vscode.diff", uri1, uri2, title);
+      vscode3.window.showInformationMessage(
+        `ASM Lens Diff: ${funcs1.length} vs ${funcs2.length} functions`
+      );
+    } finally {
+      statusMsg.dispose();
+    }
+  } catch (err) {
+    vscode3.window.showErrorMessage(`ASM Lens Diff: ${err.message}`);
   }
 }
 async function loadAndShow() {
@@ -628,6 +709,7 @@ async function loadAndShow() {
   if (functions.length === 0) {
     throw new Error("No functions found in disassembly output.");
   }
+  updateStatusBar(config, functions.length, tool.type);
   mapper = new SourceAsmMapper(config.sourceRoot);
   const asmText = mapper.build(functions);
   asmFilePath = config.binary.replace(/(\.[^.]+)?$/, ".asm");

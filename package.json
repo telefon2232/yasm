@@ -16,7 +16,8 @@
     "Debuggers"
   ],
   "activationEvents": [
-    "workspaceContains:.asm-lens.json"
+    "workspaceContains:.asm-lens.json",
+    "onCommand:asm-lens.diffAssembly"
   ],
   "main": "./bin/extension.js",
   "contributes": {
@@ -32,6 +33,10 @@
       {
         "command": "asm-lens.initConfig",
         "title": "ASM Lens: Initialize Config"
+      },
+      {
+        "command": "asm-lens.diffAssembly",
+        "title": "ASM Lens: Diff Assembly"
       }
     ],
     "configuration": {
