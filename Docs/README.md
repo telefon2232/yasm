@@ -1,4 +1,4 @@
-# ASM Lens — разработка
+# YASM — разработка
 
 Структура:
 - `src/` — исходники расширения (TypeScript)
@@ -7,7 +7,6 @@
 
 Быстрый старт:
 ```bash
-cd asm-lens
 npm install
 npm run compile
 ```
@@ -16,5 +15,5 @@ npm run compile
 
 Упаковка .vsix:
 ```bash
-npx vsce package --allow-missing-repository --out bin/asm-lens-0.1.0.vsix
+npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix
 ```

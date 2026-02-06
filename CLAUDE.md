@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-ASM Lens — VS Code extension that shows x86/x64 disassembly side-by-side with C/C++ source code using DWARF debug info from `objdump`. Godbolt-style color mapping with bidirectional navigation.
+YASM — VS Code extension that shows x86/x64 disassembly side-by-side with C/C++ source code using DWARF debug info from `objdump`. Godbolt-style color mapping with bidirectional navigation.
 
 ## Build Commands
 
 ```bash
 npm run compile          # esbuild → bin/extension.js
 npm run watch            # continuous build
-npx vsce package --allow-missing-repository --out bin/asm-lens-0.1.0.vsix  # package VSIX
-code --install-extension bin/asm-lens-0.1.0.vsix --force  # install extension
+npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix  # package VSIX
+code --install-extension bin/yasm-0.1.0.vsix --force  # install extension
 ```
 
 Debug: F5 in VS Code launches Extension Development Host.
@@ -25,7 +25,7 @@ Single-bundle VS Code extension. esbuild bundles all `src/*.ts` into `bin/extens
 
 **Data flow:**
 ```
-config.ts (load .asm-lens.json)
+config.ts (load .yasm.json)
   → toolDetector.ts (find GNU/LLVM objdump)
   → disassemblyProvider.ts (run objdump, cache by mtime)
   → objdumpParser.ts (parse → AsmFunction[])

@@ -1,8 +1,8 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as vscode from "vscode";
+import * as path from "path";
+import * as fs from "fs";
 
-const CONFIG_FILENAME = '.asm-lens.json';
+const CONFIG_FILENAME = ".yasm.json";
 
 export interface AsmLensConfig {
   binary: string;
@@ -23,14 +23,16 @@ export function getConfigPath(): string | undefined {
 export async function loadConfig(): Promise<AsmLensConfig> {
   const configPath = getConfigPath();
   if (!configPath) {
-    throw new Error('No workspace folder open');
+    throw new Error("No workspace folder open");
   }
 
   if (!fs.existsSync(configPath)) {
-    throw new Error(`Config file not found: ${CONFIG_FILENAME}. Run "ASM Lens: Initialize Config" to create one.`);
+    throw new Error(
+      `Config file not found: ${CONFIG_FILENAME}. Run "ASM Lens: Initialize Config" to create one.`,
+    );
   }
 
-  const raw = fs.readFileSync(configPath, 'utf-8');
+  const raw = fs.readFileSync(configPath, "utf-8");
   let parsed: any;
   try {
     parsed = JSON.parse(raw);
@@ -38,7 +40,7 @@ export async function loadConfig(): Promise<AsmLensConfig> {
     throw new Error(`Invalid JSON in ${CONFIG_FILENAME}`);
   }
 
-  if (!parsed.binary || typeof parsed.binary !== 'string') {
+  if (!parsed.binary || typeof parsed.binary !== "string") {
     throw new Error(`"binary" field is required in ${CONFIG_FILENAME}`);
   }
 
@@ -46,10 +48,10 @@ export async function loadConfig(): Promise<AsmLensConfig> {
 
   const config: AsmLensConfig = {
     binary: resolvePath(workspaceRoot, parsed.binary),
-    sourceRoot: resolvePath(workspaceRoot, parsed.sourceRoot || '.'),
+    sourceRoot: resolvePath(workspaceRoot, parsed.sourceRoot || "."),
     objdump: parsed.objdump || undefined,
     objdumpArgs: Array.isArray(parsed.objdumpArgs) ? parsed.objdumpArgs : [],
-    sections: Array.isArray(parsed.sections) ? parsed.sections : ['.text'],
+    sections: Array.isArray(parsed.sections) ? parsed.sections : [".text"],
   };
 
   if (!fs.existsSync(config.binary)) {
@@ -62,16 +64,17 @@ export async function loadConfig(): Promise<AsmLensConfig> {
 export async function initConfig(): Promise<void> {
   const configPath = getConfigPath();
   if (!configPath) {
-    vscode.window.showErrorMessage('No workspace folder open.');
+    vscode.window.showErrorMessage("No workspace folder open.");
     return;
   }
 
   if (fs.existsSync(configPath)) {
     const overwrite = await vscode.window.showWarningMessage(
       `${CONFIG_FILENAME} already exists. Overwrite?`,
-      'Yes', 'No'
+      "Yes",
+      "No",
     );
-    if (overwrite !== 'Yes') {
+    if (overwrite !== "Yes") {
       return;
     }
   }
@@ -80,7 +83,7 @@ export async function initConfig(): Promise<void> {
     canSelectFiles: true,
     canSelectFolders: false,
     canSelectMany: false,
-    title: 'Select compiled binary',
+    title: "Select compiled binary",
   });
 
   if (!binaryUri || binaryUri.length === 0) {
@@ -91,11 +94,11 @@ export async function initConfig(): Promise<void> {
   const binaryRel = path.relative(workspaceRoot, binaryUri[0].fsPath);
 
   const config = {
-    binary: `./${binaryRel.replace(/\\/g, '/')}`,
-    sourceRoot: '.',
+    binary: `./${binaryRel.replace(/\\/g, "/")}`,
+    sourceRoot: ".",
   };
 
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
   vscode.window.showInformationMessage(`Created ${CONFIG_FILENAME}`);
 }
 

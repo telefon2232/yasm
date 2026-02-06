@@ -1,4 +1,4 @@
-# 🔬 ASM Lens
+# 🔬 YASM
 
 **VS Code расширение для просмотра ассемблера рядом с исходным кодом C/C++.**
 
@@ -23,7 +23,7 @@
 ### 1. Установить расширение
 
 ```bash
-code --install-extension bin/asm-lens-0.1.0.vsix
+code --install-extension bin/yasm-0.1.0.vsix
 ```
 
 ### 2. Скомпилировать проект с отладочной информацией
@@ -34,7 +34,7 @@ gcc -g -O1 -o main main.c
 
 > ⚠️ Флаг `-g` обязателен — без него DWARF-информация не попадёт в бинарник и маппинг не заработает.
 
-### 3. Создать конфиг `.asm-lens.json` в корне проекта
+### 3. Создать конфиг `.yasm.json` в корне проекта
 
 ```json
 {
@@ -43,17 +43,17 @@ gcc -g -O1 -o main main.c
 }
 ```
 
-Или через команду: `Ctrl+Shift+P` → **ASM Lens: Initialize Config**
+Или через команду: `Ctrl+Shift+P` → **YASM: Initialize Config**
 
 ### 4. Запустить
 
-`Ctrl+Shift+P` → **ASM Lens: Show Assembly**
+`Ctrl+Shift+P` → **YASM: Show Assembly**
 
 ---
 
 ## ⚙️ Конфигурация
 
-Файл `.asm-lens.json` в корне рабочей папки:
+Файл `.yasm.json` в корне рабочей папки:
 
 ```json
 {
@@ -84,7 +84,7 @@ example/
 ├── main.c            — точка входа
 ├── math_utils.h      — заголовок
 ├── math_utils.c      — реализация (square, sum_squares)
-└── .asm-lens.json    — конфиг
+└── .yasm.json    — конфиг
 ```
 
 ```bash
@@ -93,7 +93,7 @@ gcc -g -O1 -o main main.c math_utils.c
 code .
 ```
 
-Затем `Ctrl+Shift+P` → **ASM Lens: Show Assembly** — и готово.
+Затем `Ctrl+Shift+P` → **YASM: Show Assembly** — и готово.
 
 ---
 
@@ -101,10 +101,10 @@ code .
 
 | Команда | Описание |
 |---------|----------|
-| **ASM Lens: Show Assembly** | Открыть панель с дизассемблированием |
-| **ASM Lens: Refresh Disassembly** | Перезагрузить дизассемблирование |
-| **ASM Lens: Initialize Config** | Создать `.asm-lens.json` через диалог |
-| **ASM Lens: Diff Assembly** | Сравнить asm двух бинарников в diff-режиме |
+| **YASM: Show Assembly** | Открыть панель с дизассемблированием |
+| **YASM: Refresh Disassembly** | Перезагрузить дизассемблирование |
+| **YASM: Initialize Config** | Создать `.yasm.json` через диалог |
+| **YASM: Diff Assembly** | Сравнить asm двух бинарников в diff-режиме |
 
 ---
 
@@ -130,7 +130,7 @@ gcc -g -O1 -o main_O1 main.c math_utils.c
 gcc -g -O2 -o main_O2 main.c math_utils.c
 ```
 
-Затем `Ctrl+Shift+P` → **ASM Lens: Diff Assembly** → выбрать `main_O1` → выбрать `main_O2`.
+Затем `Ctrl+Shift+P` → **YASM: Diff Assembly** → выбрать `main_O1` → выбрать `main_O2`.
 
 Откроется встроенный diff editor VS Code с подсветкой различий между двумя версиями asm.
 
@@ -139,10 +139,9 @@ gcc -g -O2 -o main_O2 main.c math_utils.c
 ## 🏗 Сборка из исходников
 
 ```bash
-cd asm-lens
 npm install
 npm run compile
-npx vsce package --allow-missing-repository --out bin/asm-lens-0.1.0.vsix
+npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix
 ```
 
 ---

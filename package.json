@@ -1,9 +1,9 @@
 {
-  "name": "asm-lens",
-  "displayName": "ASM Lens",
+  "name": "yasm",
+  "displayName": "YASM",
   "description": "View disassembly side-by-side with C/C++ source code",
   "version": "0.1.0",
-  "publisher": "asm-lens",
+  "publisher": "yasm",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -16,31 +16,31 @@
     "Debuggers"
   ],
   "activationEvents": [
-    "workspaceContains:.asm-lens.json",
-    "onCommand:asm-lens.diffAssembly"
+    "workspaceContains:.yasm.json",
+    "onCommand:yasm.diffAssembly"
   ],
   "main": "./bin/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "asm-lens.showAssembly",
-        "title": "ASM Lens: Show Assembly"
+        "command": "yasm.showAssembly",
+        "title": "YASM: Show Assembly"
       },
       {
-        "command": "asm-lens.refresh",
-        "title": "ASM Lens: Refresh Disassembly"
+        "command": "yasm.refresh",
+        "title": "YASM: Refresh Disassembly"
       },
       {
-        "command": "asm-lens.initConfig",
-        "title": "ASM Lens: Initialize Config"
+        "command": "yasm.initConfig",
+        "title": "YASM: Initialize Config"
       },
       {
-        "command": "asm-lens.diffAssembly",
-        "title": "ASM Lens: Diff Assembly"
+        "command": "yasm.diffAssembly",
+        "title": "YASM: Diff Assembly"
       }
     ],
     "configuration": {
-      "title": "ASM Lens",
+      "title": "YASM",
       "properties": {}
     }
   },

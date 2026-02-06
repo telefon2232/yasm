@@ -1,4 +1,4 @@
-# ASM Lens — пример
+# YASM — пример
 
 ## Быстрый старт
 
@@ -15,7 +15,7 @@ gcc -g -O1 -o main main.c math_utils.c
 ### 2. Установить расширение (если ещё не установлено)
 
 ```bash
-code --install-extension ../bin/asm-lens-0.1.0.vsix
+code --install-extension ../bin/yasm-0.1.0.vsix
 ```
 
 ### 3. Открыть папку example в VS Code
@@ -26,7 +26,7 @@ code .
 
 ### 4. Запустить
 
-1. `Ctrl+Shift+P` → **ASM Lens: Show Assembly**
+1. `Ctrl+Shift+P` → **YASM: Show Assembly**
 2. Справа откроется панель с дизассемблером
 3. Строки исходника и ассемблера окрашены в одинаковые цвета (матчинг)
 4. Кликните на строку — соответствующие строки подсветятся ярче
@@ -38,15 +38,15 @@ example/
 ├── main.c            — точка входа, вызывает функции из math_utils
 ├── math_utils.h      — заголовок с объявлениями
 ├── math_utils.c      — реализация функций (square, sum_squares)
-├── .asm-lens.json    — конфиг для ASM Lens
+├── .yasm.json    — конфиг для YASM
 └── README.md         — эта инструкция
 ```
 
-Два файла (`main.c` и `math_utils.c`) показывают, что ASM Lens корректно
+Два файла (`main.c` и `math_utils.c`) показывают, что YASM корректно
 работает с многофайловыми проектами — маппинг строк работает для всех
 исходников, скомпилированных в один бинарник.
 
-## Конфиг .asm-lens.json
+## Конфиг .yasm.json
 
 ```json
 {

@@ -36,14 +36,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.StatusBarAlignment.Left,
     100,
   );
-  statusBarItem.command = "asm-lens.refresh";
+  statusBarItem.command = "yasm.refresh";
   context.subscriptions.push(statusBarItem);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("asm-lens.showAssembly", cmdShowAssembly),
-    vscode.commands.registerCommand("asm-lens.refresh", cmdRefresh),
-    vscode.commands.registerCommand("asm-lens.initConfig", initConfig),
-    vscode.commands.registerCommand("asm-lens.diffAssembly", cmdDiffAssembly),
+    vscode.commands.registerCommand("yasm.showAssembly", cmdShowAssembly),
+    vscode.commands.registerCommand("yasm.refresh", cmdRefresh),
+    vscode.commands.registerCommand("yasm.initConfig", initConfig),
+    vscode.commands.registerCommand("yasm.diffAssembly", cmdDiffAssembly),
   );
 
   // Bidirectional highlight on cursor move
@@ -74,7 +74,7 @@ function updateStatusBar(
   if (!statusBarItem) return;
   const binaryName = path.basename(config.binary);
   statusBarItem.text = `$(file-binary) ${binaryName} | ${funcCount} funcs | ${toolType}`;
-  statusBarItem.tooltip = `ASM Lens: ${config.binary}\n${funcCount} functions, ${toolType} objdump\nClick to refresh`;
+  statusBarItem.tooltip = `YASM: ${config.binary}\n${funcCount} functions, ${toolType} objdump\nClick to refresh`;
   statusBarItem.show();
 }
 
@@ -82,7 +82,7 @@ async function cmdShowAssembly(): Promise<void> {
   try {
     await loadAndShow();
   } catch (err: any) {
-    vscode.window.showErrorMessage(`ASM Lens: ${err.message}`);
+    vscode.window.showErrorMessage(`YASM: ${err.message}`);
   }
 }
 
@@ -93,7 +93,7 @@ async function cmdRefresh(): Promise<void> {
     }
     await loadAndShow();
   } catch (err: any) {
-    vscode.window.showErrorMessage(`ASM Lens: ${err.message}`);
+    vscode.window.showErrorMessage(`YASM: ${err.message}`);
   }
 }
 
@@ -120,7 +120,7 @@ async function cmdDiffAssembly(): Promise<void> {
     const binary1 = pick1[0].fsPath;
     const binary2 = pick2[0].fsPath;
 
-    // Загружаем настройки из .asm-lens.json если есть
+    // Загружаем настройки из .yasm.json если есть
     let config: AsmLensConfig | undefined;
     const configPath = getConfigPath();
     if (configPath && fs.existsSync(configPath)) {
@@ -135,7 +135,7 @@ async function cmdDiffAssembly(): Promise<void> {
     const sections = config?.sections || [".text"];
     const extraArgs = config?.objdumpArgs || [];
 
-    const statusMsg = vscode.window.setStatusBarMessage("ASM Lens: Diffing...");
+    const statusMsg = vscode.window.setStatusBarMessage("YASM: Diffing...");
     try {
       // Дизассемблируем оба бинарника параллельно
       const [raw1, raw2] = await Promise.all([
@@ -196,13 +196,13 @@ async function cmdDiffAssembly(): Promise<void> {
       applyDiffColors();
 
       vscode.window.showInformationMessage(
-        `ASM Lens Diff: ${name1} (${funcs1.length} funcs) vs ${name2} (${funcs2.length} funcs)`,
+        `YASM Diff: ${name1} (${funcs1.length} funcs) vs ${name2} (${funcs2.length} funcs)`,
       );
     } finally {
       statusMsg.dispose();
     }
   } catch (err: any) {
-    vscode.window.showErrorMessage(`ASM Lens Diff: ${err.message}`);
+    vscode.window.showErrorMessage(`YASM Diff: ${err.message}`);
   }
 }
 
@@ -258,9 +258,7 @@ async function loadAndShow(): Promise<void> {
 
   const tool = await detectObjdump(config.objdump);
 
-  const statusMsg = vscode.window.setStatusBarMessage(
-    "ASM Lens: Disassembling...",
-  );
+  const statusMsg = vscode.window.setStatusBarMessage("YASM: Disassembling...");
   let rawOutput: string;
   try {
     rawOutput = await disassemble(
@@ -308,7 +306,7 @@ async function loadAndShow(): Promise<void> {
   setupBinaryWatcher(config.binary);
 
   vscode.window.showInformationMessage(
-    `ASM Lens: ${functions.length} functions → ${path.basename(asmFilePath)}`,
+    `YASM: ${functions.length} functions → ${path.basename(asmFilePath)}`,
   );
 }
 
@@ -332,7 +330,7 @@ function setupBinaryWatcher(binaryPath: string): void {
   binaryWatcher.onDidChange(() => {
     invalidateCache(binaryPath);
     loadAndShow().catch((err) => {
-      vscode.window.showErrorMessage(`ASM Lens auto-refresh: ${err.message}`);
+      vscode.window.showErrorMessage(`YASM auto-refresh: ${err.message}`);
     });
   });
 }
