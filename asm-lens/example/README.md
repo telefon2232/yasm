@@ -5,7 +5,7 @@
 ### 1. Скомпилировать пример с отладочной информацией
 
 ```bash
-gcc -g -O1 -o main main.c
+gcc -g -O1 -o main main.c math_utils.c
 ```
 
 Флаги:
@@ -15,7 +15,7 @@ gcc -g -O1 -o main main.c
 ### 2. Установить расширение (если ещё не установлено)
 
 ```bash
-code --install-extension ../asm-lens-0.1.0.vsix
+code --install-extension ../bin/asm-lens-0.1.0.vsix
 ```
 
 ### 3. Открыть папку example в VS Code
@@ -35,35 +35,31 @@ code .
 
 ```
 example/
-├── main.c            — исходный код
+├── main.c            — точка входа, вызывает функции из math_utils
+├── math_utils.h      — заголовок с объявлениями
+├── math_utils.c      — реализация функций (square, sum_squares)
 ├── .asm-lens.json    — конфиг для ASM Lens
 └── README.md         — эта инструкция
 ```
+
+Два файла (`main.c` и `math_utils.c`) показывают, что ASM Lens корректно
+работает с многофайловыми проектами — маппинг строк работает для всех
+исходников, скомпилированных в один бинарник.
 
 ## Конфиг .asm-lens.json
 
 ```json
 {
   "binary": "./main",
-  "sourceRoot": "."
+  "sourceRoot": ".",
+  "objdump": "objdump",
+  "objdumpArgs": ["-M", "intel"],
+  "sections": [".text"]
 }
 ```
 
 - `binary` — путь до скомпилированного бинарника
 - `sourceRoot` — корень исходников (для резолва путей из DWARF)
-
-## Дополнительные опции конфига
-
-```json
-{
-  "binary": "./main",
-  "sourceRoot": ".",
-  "objdump": "objdump",
-  "objdumpArgs": [],
-  "sections": [".text"]
-}
-```
-
 - `objdump` — путь к objdump/llvm-objdump (auto-detect по умолчанию)
-- `objdumpArgs` — дополнительные аргументы
+- `objdumpArgs` — дополнительные аргументы (например `["-M", "intel"]` для Intel-синтаксиса)
 - `sections` — секции для дизассемблирования (по умолчанию `.text`)
