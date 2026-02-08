@@ -17,7 +17,8 @@
   ],
   "activationEvents": [
     "workspaceContains:.yasm.json",
-    "onCommand:yasm.diffAssembly"
+    "onCommand:yasm.diffAssembly",
+    "onCommand:yasm.liveMode"
   ],
   "main": "./bin/extension.js",
   "contributes": {
@@ -37,6 +38,10 @@
       {
         "command": "yasm.diffAssembly",
         "title": "YASM: Diff Assembly"
+      },
+      {
+        "command": "yasm.liveMode",
+        "title": "YASM: Live Mode"
       }
     ],
     "configuration": {

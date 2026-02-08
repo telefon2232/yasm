@@ -2,12 +2,19 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { loadConfig, getConfigPath, initConfig, AsmLensConfig } from "./config";
-import { detectObjdump } from "./toolDetector";
+import {
+  loadConfig,
+  getConfigPath,
+  initConfig,
+  AsmLensConfig,
+  LiveModeConfig,
+} from "./config";
+import { detectObjdump, DetectedTool } from "./toolDetector";
 import { disassemble, invalidateCache } from "./disassemblyProvider";
 import { parseObjdumpOutput } from "./objdumpParser";
 import { SourceAsmMapper } from "./sourceAsmMapper";
 import { DecorationManager, MappingEntry } from "./decorationManager";
+import { compileToObject, cleanupObjectFile } from "./liveCompiler";
 
 let decorations: DecorationManager;
 let mapper: SourceAsmMapper;
@@ -27,6 +34,25 @@ let diffAsmEditor2: vscode.TextEditor | undefined;
 let diffAsmPath1: string | undefined;
 let diffAsmPath2: string | undefined;
 
+// Live mode state
+let liveActive = false;
+let liveConfig: LiveModeConfig | undefined;
+let liveTool: DetectedTool | undefined;
+let liveSourceFile: string | undefined;
+let liveObjectPath: string | undefined;
+let liveMapper: SourceAsmMapper | undefined;
+let liveDecorations: DecorationManager | undefined;
+let liveAsmEditor: vscode.TextEditor | undefined;
+let liveAsmPath: string | undefined;
+let liveTimer: ReturnType<typeof setInterval> | undefined;
+let liveSaveDisposable: vscode.Disposable | undefined;
+let liveAbortController: AbortController | undefined;
+let liveRefreshing = false;
+let liveOutputChannel: vscode.OutputChannel | undefined;
+let liveSections: string[] = [".text"];
+let liveExtraArgs: string[] = [];
+let liveSourceRoot: string = ".";
+
 export function activate(context: vscode.ExtensionContext): void {
   decorations = new DecorationManager();
 
@@ -44,6 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("yasm.refresh", cmdRefresh),
     vscode.commands.registerCommand("yasm.initConfig", initConfig),
     vscode.commands.registerCommand("yasm.diffAssembly", cmdDiffAssembly),
+    vscode.commands.registerCommand("yasm.liveMode", cmdLiveMode),
   );
 
   // Bidirectional highlight on cursor move
@@ -57,6 +84,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (asmEditor && !editors.find((e) => e === asmEditor)) {
         asmEditor = undefined;
       }
+      if (liveAsmEditor && !editors.find((e) => e === liveAsmEditor)) {
+        // Live asm editor закрыт — останавливаем live mode
+        stopLiveMode();
+      }
     }),
   );
 }
@@ -64,6 +95,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   binaryWatcher?.dispose();
   statusBarItem?.hide();
+  stopLiveMode();
 }
 
 function updateStatusBar(
@@ -360,6 +392,12 @@ function onSelectionChanged(
     return;
   }
 
+  // Live mode asm editor
+  if (liveAsmPath && editorPath === liveAsmPath && liveMapper) {
+    handleDiffAsmClick(liveMapper, liveDecorations, liveAsmEditor, line);
+    return;
+  }
+
   // Исходник — обновляем все активные маппинги
   if (isSourceEditor(editor)) {
     if (mapper && asmEditor) {
@@ -381,6 +419,15 @@ function onSelectionChanged(
         diffMapper2,
         diffDecorations2,
         diffAsmEditor2,
+      );
+    }
+    if (liveMapper && liveAsmEditor && liveDecorations) {
+      handleDiffSourceClick(
+        editor,
+        line,
+        liveMapper,
+        liveDecorations,
+        liveAsmEditor,
       );
     }
   }
@@ -490,6 +537,258 @@ function handleAsmClick(asmLine: number): void {
     );
     decorations.scrollTo(sourceEditor, editorLine);
   }
+}
+
+// ─── Live Mode ───────────────────────────────────────────────
+
+async function cmdLiveMode(): Promise<void> {
+  try {
+    // Если live mode уже активен — останавливаем
+    if (liveActive) {
+      stopLiveMode();
+      statusBarItem?.hide();
+      vscode.window.showInformationMessage("YASM: Live mode stopped");
+      return;
+    }
+
+    // Находим активный source editor
+    const sourceEditor = findSourceEditor();
+    if (!sourceEditor) {
+      vscode.window.showErrorMessage("YASM: Open a C/C++ source file first");
+      return;
+    }
+
+    // Загружаем конфиг
+    const config = await loadConfig();
+    if (!config.liveMode) {
+      vscode.window.showErrorMessage(
+        'YASM: "liveMode" section not found in .yasm.json. Add compileCommand, trigger, etc.',
+      );
+      return;
+    }
+
+    liveConfig = config.liveMode;
+    liveTool = await detectObjdump(config.objdump);
+    liveSections = config.sections || [".text"];
+    liveExtraArgs = config.objdumpArgs || [];
+    liveSourceRoot = config.sourceRoot;
+    liveSourceFile = sourceEditor.document.uri.fsPath;
+    liveActive = true;
+
+    // Output channel для ошибок компиляции
+    if (!liveOutputChannel) {
+      liveOutputChannel = vscode.window.createOutputChannel("YASM Live");
+    }
+    liveOutputChannel.clear();
+
+    // Создаём DecorationManager для live mode
+    liveDecorations?.dispose();
+    liveDecorations = new DecorationManager();
+
+    // Первый запуск
+    await liveRefresh();
+
+    // Настраиваем триггер
+    if (liveConfig.trigger === "live") {
+      const interval = liveConfig.interval || 500;
+      let lastContent = sourceEditor.document.getText();
+
+      liveTimer = setInterval(() => {
+        const editor = findSourceEditorByPath(liveSourceFile!);
+        if (!editor) return;
+
+        const currentContent = editor.document.getText();
+        if (currentContent !== lastContent) {
+          lastContent = currentContent;
+          // Сохраняем файл перед компиляцией (компилятор читает с диска)
+          editor.document.save().then(() => {
+            liveRefresh().catch(() => {});
+          });
+        }
+      }, interval);
+    } else {
+      // trigger === "save"
+      liveSaveDisposable = vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (liveSourceFile && doc.uri.fsPath === liveSourceFile) {
+          liveRefresh().catch(() => {});
+        }
+      });
+    }
+
+    const triggerLabel =
+      liveConfig.trigger === "live"
+        ? `live (${liveConfig.interval || 500}ms)`
+        : "on save";
+    vscode.window.showInformationMessage(
+      `YASM: Live mode started [${triggerLabel}]`,
+    );
+    updateLiveStatusBar(triggerLabel);
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`YASM Live: ${err.message}`);
+  }
+}
+
+async function liveRefresh(): Promise<void> {
+  if (!liveActive || !liveConfig || !liveTool || !liveSourceFile) return;
+  if (liveRefreshing) return; // предыдущий refresh ещё идёт
+
+  liveRefreshing = true;
+
+  // Отменяем предыдущую компиляцию если она ещё работает
+  liveAbortController?.abort();
+  liveAbortController = new AbortController();
+
+  try {
+    // 1. Компилируем исходник в .o
+    const result = await compileToObject(
+      liveSourceFile,
+      liveConfig.compileCommand,
+      liveAbortController.signal,
+    );
+
+    if (!result.success) {
+      // Показываем ошибки компиляции в Output Channel
+      if (liveOutputChannel && result.stderr !== "Compilation cancelled") {
+        liveOutputChannel.clear();
+        liveOutputChannel.appendLine("── Compilation errors ──");
+        liveOutputChannel.appendLine(result.stderr);
+        liveOutputChannel.show(true); // true = не фокусировать
+      }
+      statusBarItem.text = "$(error) YASM Live: compile error";
+      return;
+    }
+
+    // Компиляция успешна — очищаем Output Channel
+    liveOutputChannel?.clear();
+
+    // Запоминаем путь для cleanup
+    if (liveObjectPath && liveObjectPath !== result.outputPath) {
+      cleanupObjectFile(liveObjectPath);
+    }
+    liveObjectPath = result.outputPath;
+
+    // 2. Дизассемблируем .o
+    invalidateCache(result.outputPath);
+    const rawOutput = await disassemble(
+      result.outputPath,
+      liveTool,
+      liveSections,
+      liveExtraArgs,
+    );
+
+    if (!rawOutput.trim()) return;
+
+    // 3. Парсим
+    const functions = parseObjdumpOutput(rawOutput, liveTool.type);
+    if (functions.length === 0) return;
+
+    // 4. Строим маппинг и текст
+    liveMapper = new SourceAsmMapper(liveSourceRoot);
+    const asmText = liveMapper.build(functions);
+
+    // 5. Пишем .asm файл во временную директорию
+    const baseName = path.basename(
+      liveSourceFile,
+      path.extname(liveSourceFile),
+    );
+    const tmpAsmPath = path.join(os.tmpdir(), `yasm_live_${baseName}.asm`);
+
+    fs.writeFileSync(tmpAsmPath, asmText, "utf-8");
+    liveAsmPath = tmpAsmPath;
+
+    // 6. Открываем или обновляем asm editor
+    if (liveAsmEditor) {
+      // Документ уже открыт — обновляем содержимое через revert
+      // (файл уже перезаписан на диске, просто перечитываем)
+      const doc = liveAsmEditor.document;
+      if (doc.uri.fsPath === tmpAsmPath) {
+        // Перечитываем файл с диска
+        await vscode.commands.executeCommand(
+          "workbench.action.files.revert",
+          doc.uri,
+        );
+        // После revert нужно заново получить editor
+        liveAsmEditor = vscode.window.visibleTextEditors.find(
+          (e) => e.document.uri.fsPath === tmpAsmPath,
+        );
+      }
+    }
+
+    if (!liveAsmEditor) {
+      const doc = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(tmpAsmPath),
+      );
+      liveAsmEditor = await vscode.window.showTextDocument(doc, {
+        viewColumn: vscode.ViewColumn.Beside,
+        preserveFocus: true,
+        preview: false,
+      });
+    }
+
+    // 7. Применяем цветовой маппинг
+    const sourceEditor = findSourceEditorByPath(liveSourceFile);
+    if (sourceEditor && liveAsmEditor && liveDecorations && liveMapper) {
+      const entries = buildMappingEntries(liveMapper, liveSourceFile);
+      liveDecorations.applyColorMapping(sourceEditor, liveAsmEditor, entries);
+    }
+
+    const triggerLabel =
+      liveConfig.trigger === "live"
+        ? `live (${liveConfig.interval || 500}ms)`
+        : "on save";
+    updateLiveStatusBar(triggerLabel, functions.length);
+  } finally {
+    liveRefreshing = false;
+  }
+}
+
+function updateLiveStatusBar(triggerLabel: string, funcCount?: number): void {
+  if (!statusBarItem) return;
+  const funcs = funcCount !== undefined ? ` | ${funcCount} funcs` : "";
+  statusBarItem.text = `$(zap) YASM Live [${triggerLabel}]${funcs}`;
+  statusBarItem.tooltip = `YASM Live Mode\nSource: ${liveSourceFile}\nTrigger: ${triggerLabel}\nClick to refresh`;
+  statusBarItem.show();
+}
+
+function stopLiveMode(): void {
+  if (!liveActive) return;
+  liveActive = false;
+
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = undefined;
+  }
+
+  liveSaveDisposable?.dispose();
+  liveSaveDisposable = undefined;
+
+  liveAbortController?.abort();
+  liveAbortController = undefined;
+
+  liveDecorations?.dispose();
+  liveDecorations = undefined;
+
+  liveMapper = undefined;
+  liveAsmEditor = undefined;
+  liveConfig = undefined;
+  liveTool = undefined;
+  liveSourceFile = undefined;
+  liveAsmPath = undefined;
+  liveRefreshing = false;
+
+  // Удаляем временный .o файл
+  if (liveObjectPath) {
+    cleanupObjectFile(liveObjectPath);
+    liveObjectPath = undefined;
+  }
+}
+
+function findSourceEditorByPath(
+  filePath: string,
+): vscode.TextEditor | undefined {
+  return vscode.window.visibleTextEditors.find(
+    (e) => e.document.uri.fsPath === filePath,
+  );
 }
 
 function findSourceEditor(): vscode.TextEditor | undefined {
