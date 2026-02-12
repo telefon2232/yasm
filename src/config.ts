@@ -54,7 +54,11 @@ export async function loadConfig(): Promise<AsmLensConfig> {
     throw new Error(`"binary" field is required in ${CONFIG_FILENAME}`);
   }
 
-  const workspaceRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    throw new Error("No workspace folder open");
+  }
+  const workspaceRoot = folders[0].uri.fsPath;
 
   let liveMode: LiveModeConfig | undefined;
   if (parsed.liveMode && typeof parsed.liveMode === "object") {
@@ -118,7 +122,12 @@ export async function initConfig(): Promise<void> {
     return;
   }
 
-  const workspaceRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
+  const initFolders = vscode.workspace.workspaceFolders;
+  if (!initFolders || initFolders.length === 0) {
+    vscode.window.showErrorMessage("No workspace folder open.");
+    return;
+  }
+  const workspaceRoot = initFolders[0].uri.fsPath;
   const binaryRel = path.relative(workspaceRoot, binaryUri[0].fsPath);
 
   const config = {

@@ -71,7 +71,11 @@ async function loadConfig() {
   if (!parsed.binary || typeof parsed.binary !== "string") {
     throw new Error(`"binary" field is required in ${CONFIG_FILENAME}`);
   }
-  const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) {
+    throw new Error("No workspace folder open");
+  }
+  const workspaceRoot = folders[0].uri.fsPath;
   let liveMode;
   if (parsed.liveMode && typeof parsed.liveMode === "object") {
     const lm = parsed.liveMode;
@@ -125,7 +129,12 @@ async function initConfig() {
   if (!binaryUri || binaryUri.length === 0) {
     return;
   }
-  const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+  const initFolders = vscode.workspace.workspaceFolders;
+  if (!initFolders || initFolders.length === 0) {
+    vscode.window.showErrorMessage("No workspace folder open.");
+    return;
+  }
+  const workspaceRoot = initFolders[0].uri.fsPath;
   const binaryRel = path.relative(workspaceRoot, binaryUri[0].fsPath);
   const config = {
     binary: `./${binaryRel.replace(/\\/g, "/")}`,
@@ -167,11 +176,13 @@ async function detectObjdump(configPath) {
     }
   }
   throw new Error(
-    'objdump not found. Install binutils or LLVM, or set "objdump" in .asm-lens.json'
+    'objdump not found. Install binutils or LLVM, or set "objdump" in .yasm.json'
   );
 }
 async function detectType(toolPath) {
-  const { stdout } = await execFileAsync(toolPath, ["--version"], { timeout: 5e3 });
+  const { stdout } = await execFileAsync(toolPath, ["--version"], {
+    timeout: 5e3
+  });
   if (stdout.toLowerCase().includes("llvm")) {
     return "llvm";
   }
@@ -185,17 +196,49 @@ var fs2 = __toESM(require("fs"));
 var execFileAsync2 = (0, import_util2.promisify)(import_child_process2.execFile);
 var cache = /* @__PURE__ */ new Map();
 async function disassemble(binaryPath, tool, sections, extraArgs) {
-  const stat = fs2.statSync(binaryPath);
-  const mtime = stat.mtimeMs;
+  let mtime;
+  try {
+    const stat = fs2.statSync(binaryPath);
+    mtime = stat.mtimeMs;
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      throw new Error(
+        `Binary file not found: ${binaryPath}. Was it deleted or moved?`
+      );
+    }
+    throw new Error(
+      `Cannot access binary file: ${binaryPath} (${err?.message || err})`
+    );
+  }
   const cached = cache.get(binaryPath);
   if (cached && cached.mtime === mtime) {
     return cached.output;
   }
   const args = buildArgs(tool, binaryPath, sections, extraArgs);
-  const { stdout } = await execFileAsync2(tool.path, args, {
-    maxBuffer: 256 * 1024 * 1024,
-    timeout: 12e4
-  });
+  let stdout;
+  try {
+    const result = await execFileAsync2(tool.path, args, {
+      maxBuffer: 256 * 1024 * 1024,
+      timeout: 12e4
+    });
+    stdout = result.stdout;
+  } catch (err) {
+    if (err?.killed && err?.signal === "SIGTERM") {
+      throw new Error(
+        `objdump timed out (>120s). Binary may be too large, try limiting sections in .yasm.json`
+      );
+    }
+    if (err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw new Error(
+        `objdump output too large (>256MB). Try limiting sections in .yasm.json`
+      );
+    }
+    const stderr = (err?.stderr || "").slice(0, 300);
+    const code = err?.code ?? err?.status ?? "unknown";
+    throw new Error(
+      `objdump failed (exit code ${code}): ${stderr || err?.message || "unknown error"}`
+    );
+  }
   cache.set(binaryPath, { mtime, output: stdout });
   return stdout;
 }
@@ -781,7 +824,10 @@ async function cmdDiffAssembly() {
     if (configPath && fs4.existsSync(configPath)) {
       try {
         config = await loadConfig();
-      } catch {
+      } catch (err) {
+        vscode3.window.showWarningMessage(
+          `YASM Diff: config error (${err?.message || "unknown"}), using defaults`
+        );
       }
     }
     const tool = await detectObjdump(config?.objdump);
@@ -932,7 +978,9 @@ function setupBinaryWatcher(binaryPath) {
   binaryWatcher.onDidChange(() => {
     invalidateCache(binaryPath);
     loadAndShow().catch((err) => {
-      vscode3.window.showErrorMessage(`YASM auto-refresh: ${err.message}`);
+      vscode3.window.showErrorMessage(
+        `YASM auto-refresh: ${err?.message || String(err)}`
+      );
     });
   });
 }
@@ -1115,16 +1163,14 @@ async function cmdLiveMode() {
         if (currentContent !== lastContent) {
           lastContent = currentContent;
           editor.document.save().then(() => {
-            liveRefresh().catch(() => {
-            });
+            liveRefresh().catch((err) => showLiveError(err));
           });
         }
       }, interval);
     } else {
       liveSaveDisposable = vscode3.workspace.onDidSaveTextDocument((doc) => {
         if (liveSourceFile && doc.uri.fsPath === liveSourceFile) {
-          liveRefresh().catch(() => {
-          });
+          liveRefresh().catch((err) => showLiveError(err));
         }
       });
     }
@@ -1257,6 +1303,17 @@ function stopLiveMode() {
     liveObjectPath = void 0;
   }
 }
+function showLiveError(err) {
+  const msg = err?.message || String(err);
+  if (liveOutputChannel) {
+    liveOutputChannel.appendLine(`\u2500\u2500 Live refresh error \u2500\u2500`);
+    liveOutputChannel.appendLine(msg);
+    liveOutputChannel.show(true);
+  }
+  if (statusBarItem) {
+    statusBarItem.text = "$(error) YASM Live: error";
+  }
+}
 function findSourceEditorByPath(filePath) {
   return vscode3.window.visibleTextEditors.find(
     (e) => e.document.uri.fsPath === filePath
@@ -1267,7 +1324,7 @@ function findSourceEditor() {
 }
 function isSourceEditor(editor) {
   const langId = editor.document.languageId;
-  return editor.document.uri.scheme === "file" && (langId === "c" || langId === "cpp" || langId === "objective-c" || langId === "objective-cpp");
+  return editor.document.uri.scheme === "file" && (langId === "c" || langId === "cpp" || langId === "objective-c" || langId === "objective-cpp" || langId === "fortran" || langId === "FortranFreeForm" || langId === "FortranFixedForm" || langId === "rust");
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {

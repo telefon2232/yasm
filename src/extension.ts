@@ -158,8 +158,10 @@ async function cmdDiffAssembly(): Promise<void> {
     if (configPath && fs.existsSync(configPath)) {
       try {
         config = await loadConfig();
-      } catch {
-        // конфиг невалидный — продолжаем с дефолтами
+      } catch (err: any) {
+        vscode.window.showWarningMessage(
+          `YASM Diff: config error (${err?.message || "unknown"}), using defaults`,
+        );
       }
     }
 
@@ -362,7 +364,9 @@ function setupBinaryWatcher(binaryPath: string): void {
   binaryWatcher.onDidChange(() => {
     invalidateCache(binaryPath);
     loadAndShow().catch((err) => {
-      vscode.window.showErrorMessage(`YASM auto-refresh: ${err.message}`);
+      vscode.window.showErrorMessage(
+        `YASM auto-refresh: ${err?.message || String(err)}`,
+      );
     });
   });
 }
@@ -602,7 +606,7 @@ async function cmdLiveMode(): Promise<void> {
           lastContent = currentContent;
           // Сохраняем файл перед компиляцией (компилятор читает с диска)
           editor.document.save().then(() => {
-            liveRefresh().catch(() => {});
+            liveRefresh().catch((err) => showLiveError(err));
           });
         }
       }, interval);
@@ -610,7 +614,7 @@ async function cmdLiveMode(): Promise<void> {
       // trigger === "save"
       liveSaveDisposable = vscode.workspace.onDidSaveTextDocument((doc) => {
         if (liveSourceFile && doc.uri.fsPath === liveSourceFile) {
-          liveRefresh().catch(() => {});
+          liveRefresh().catch((err) => showLiveError(err));
         }
       });
     }
@@ -783,6 +787,18 @@ function stopLiveMode(): void {
   }
 }
 
+function showLiveError(err: any): void {
+  const msg = err?.message || String(err);
+  if (liveOutputChannel) {
+    liveOutputChannel.appendLine(`── Live refresh error ──`);
+    liveOutputChannel.appendLine(msg);
+    liveOutputChannel.show(true);
+  }
+  if (statusBarItem) {
+    statusBarItem.text = "$(error) YASM Live: error";
+  }
+}
+
 function findSourceEditorByPath(
   filePath: string,
 ): vscode.TextEditor | undefined {
@@ -802,6 +818,10 @@ function isSourceEditor(editor: vscode.TextEditor): boolean {
     (langId === "c" ||
       langId === "cpp" ||
       langId === "objective-c" ||
-      langId === "objective-cpp")
+      langId === "objective-cpp" ||
+      langId === "fortran" ||
+      langId === "FortranFreeForm" ||
+      langId === "FortranFixedForm" ||
+      langId === "rust")
   );
 }
