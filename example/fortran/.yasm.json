@@ -1,0 +1,7 @@
+{
+  "binary": "./main",
+  "sourceRoot": ".",
+  "objdump": "objdump",
+  "objdumpArgs": ["-M", "intel"],
+  "sections": [".text"]
+}

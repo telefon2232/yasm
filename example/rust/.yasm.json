@@ -1,0 +1,7 @@
+{
+  "binary": "./target/debug/yasm-example",
+  "sourceRoot": ".",
+  "objdump": "objdump",
+  "objdumpArgs": ["-M", "intel"],
+  "sections": [".text"]
+}
