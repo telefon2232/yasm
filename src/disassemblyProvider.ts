@@ -18,7 +18,7 @@ export async function disassemble(
   sections: string[],
   extraArgs: string[],
 ): Promise<string> {
-  // Проверяем существование бинарника
+  // Check that the binary exists
   let mtime: number;
   try {
     const stat = fs.statSync(binaryPath);

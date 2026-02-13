@@ -14,9 +14,9 @@ export interface CompileResult {
 }
 
 /**
- * Компилирует исходный файл во временный .o.
- * compileCommand — шаблон с {file} и {output}.
- * Возвращает путь к .o и stderr (ошибки компилятора).
+ * Compiles a source file into a temporary .o.
+ * compileCommand — template with {file} and {output} placeholders.
+ * Returns the path to .o and stderr (compiler errors).
  */
 export async function compileToObject(
   sourceFile: string,
@@ -31,12 +31,12 @@ export async function compileToObject(
   const baseName = path.basename(sourceFile, path.extname(sourceFile));
   const outputPath = path.join(os.tmpdir(), `yasm_${baseName}_${hash}.o`);
 
-  // Подставляем {file} и {output} в команду
+  // Substitute {file} and {output} in the command
   const cmd = compileCommand
     .replace(/\{file\}/g, sourceFile)
     .replace(/\{output\}/g, outputPath);
 
-  // Разбиваем команду на программу и аргументы
+  // Split the command into program and arguments
   const parts = parseCommand(cmd);
   if (parts.length === 0) {
     return { success: false, outputPath, stderr: "Empty compile command" };
@@ -58,7 +58,7 @@ export async function compileToObject(
       stderr: stderr || "",
     };
   } catch (err: any) {
-    // Компиляция упала — возвращаем stderr с ошибками
+    // Compilation failed — return stderr with errors
     if (err.killed || err.code === "ABORT_ERR") {
       return { success: false, outputPath, stderr: "Compilation cancelled" };
     }
@@ -70,20 +70,20 @@ export async function compileToObject(
   }
 }
 
-/** Удаляет временный .o файл */
+/** Removes the temporary .o file */
 export function cleanupObjectFile(outputPath: string): void {
   try {
     if (fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath);
     }
   } catch {
-    // не критично
+    // non-critical
   }
 }
 
 /**
- * Разбирает командную строку на массив аргументов.
- * Поддерживает кавычки: "gcc -O2 -g" → ["gcc", "-O2", "-g"]
+ * Parses a command line string into an array of arguments.
+ * Supports quotes: "gcc -O2 -g" → ["gcc", "-O2", "-g"]
  */
 function parseCommand(cmd: string): string[] {
   const result: string[] = [];

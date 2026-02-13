@@ -5,11 +5,11 @@ import * as fs from "fs";
 const CONFIG_FILENAME = ".yasm.json";
 
 export interface LiveModeConfig {
-  /** Команда компиляции. {file} — исходник, {output} — выходной .o */
+  /** Compile command. {file} — source file, {output} — output .o */
   compileCommand: string;
-  /** Триггер: "save" — при сохранении, "live" — по таймеру */
+  /** Trigger: "save" — on file save, "live" — on timer */
   trigger: "save" | "live";
-  /** Интервал в мс для live-режима (по умолчанию 500) */
+  /** Interval in ms for live mode (default 500) */
   interval?: number;
 }
 

@@ -1,77 +1,77 @@
 import * as vscode from "vscode";
 
-// Godbolt-style color palette — яркие, хорошо различимые цвета.
-// bg: постоянный фон (видимый, но не кричащий)
-// hover: яркий фон при наведении/клике
-// border: цвет левой рамки при hover
+// Godbolt-style color palette — vivid, easily distinguishable colors.
+// bg: persistent background (visible but not distracting)
+// hover: bright background on hover/click
+// border: left border color on hover
 const PALETTE = [
-  // красный
+  // red
   {
     bg: "rgba(255, 120, 120, 0.18)",
     hover: "rgba(255, 100, 100, 0.42)",
     border: "#ff6666",
   },
-  // синий
+  // blue
   {
     bg: "rgba(120, 180, 255, 0.18)",
     hover: "rgba(100, 160, 255, 0.42)",
     border: "#6699ff",
   },
-  // зелёный
+  // green
   {
     bg: "rgba(100, 220, 100, 0.18)",
     hover: "rgba(80, 200, 80, 0.42)",
     border: "#44cc44",
   },
-  // жёлтый
+  // yellow
   {
     bg: "rgba(255, 210, 80, 0.18)",
     hover: "rgba(255, 200, 50, 0.42)",
     border: "#ddaa00",
   },
-  // фиолетовый
+  // purple
   {
     bg: "rgba(200, 130, 255, 0.18)",
     hover: "rgba(180, 100, 255, 0.42)",
     border: "#aa66ff",
   },
-  // оранжевый
+  // orange
   {
     bg: "rgba(255, 170, 100, 0.18)",
     hover: "rgba(255, 150, 70, 0.42)",
     border: "#ee8833",
   },
-  // бирюзовый
+  // teal
   {
     bg: "rgba(80, 220, 220, 0.18)",
     hover: "rgba(50, 200, 200, 0.42)",
     border: "#33bbbb",
   },
-  // розовый
+  // pink
   {
     bg: "rgba(255, 130, 190, 0.18)",
     hover: "rgba(255, 100, 170, 0.42)",
     border: "#ee66aa",
   },
-  // салатовый
+  // lime
   {
     bg: "rgba(170, 220, 100, 0.18)",
     hover: "rgba(150, 210, 70, 0.42)",
     border: "#88bb33",
   },
-  // лавандовый
+  // lavender
   {
     bg: "rgba(180, 180, 255, 0.18)",
     hover: "rgba(160, 160, 255, 0.42)",
     border: "#9999ff",
   },
-  // коралловый
+  // coral
   {
     bg: "rgba(255, 160, 150, 0.18)",
     hover: "rgba(255, 130, 120, 0.42)",
     border: "#ee7766",
   },
-  // мятный
+  // mint
   {
     bg: "rgba(120, 220, 190, 0.18)",
     hover: "rgba(90, 210, 170, 0.42)",
@@ -103,14 +103,14 @@ export class DecorationManager {
   constructor() {
     for (const color of PALETTE) {
       this.colorSlots.push({
-        // Постоянный фон — цветная полоска, всегда видна
+        // Persistent background — colored stripe, always visible
         normal: vscode.window.createTextEditorDecorationType({
           backgroundColor: color.bg,
           isWholeLine: true,
           overviewRulerColor: color.border,
           overviewRulerLane: vscode.OverviewRulerLane.Left,
         }),
-        // Hover — яркий фон + толстая цветная рамка слева
+        // Hover — bright background + thick colored border on the left
         hover: vscode.window.createTextEditorDecorationType({
           backgroundColor: color.hover,
           isWholeLine: true,

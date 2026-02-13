@@ -85,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
         asmEditor = undefined;
       }
       if (liveAsmEditor && !editors.find((e) => e === liveAsmEditor)) {
-        // Live asm editor закрыт — останавливаем live mode
+        // Live asm editor closed — stop live mode
         stopLiveMode();
       }
     }),
@@ -131,7 +131,7 @@ async function cmdRefresh(): Promise<void> {
 
 async function cmdDiffAssembly(): Promise<void> {
   try {
-    // Выбор первого бинарника
+    // Select first binary
     const pick1 = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -140,7 +140,7 @@ async function cmdDiffAssembly(): Promise<void> {
     });
     if (!pick1 || pick1.length === 0) return;
 
-    // Выбор второго бинарника
+    // Select second binary
     const pick2 = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -152,7 +152,7 @@ async function cmdDiffAssembly(): Promise<void> {
     const binary1 = pick1[0].fsPath;
     const binary2 = pick2[0].fsPath;
 
-    // Загружаем настройки из .yasm.json если есть
+    // Load settings from .yasm.json if available
     let config: AsmLensConfig | undefined;
     const configPath = getConfigPath();
     if (configPath && fs.existsSync(configPath)) {
@@ -171,7 +171,7 @@ async function cmdDiffAssembly(): Promise<void> {
 
     const statusMsg = vscode.window.setStatusBarMessage("YASM: Diffing...");
     try {
-      // Дизассемблируем оба бинарника параллельно
+      // Disassemble both binaries in parallel
       const [raw1, raw2] = await Promise.all([
         disassemble(binary1, tool, sections, extraArgs),
         disassemble(binary2, tool, sections, extraArgs),
@@ -185,13 +185,13 @@ async function cmdDiffAssembly(): Promise<void> {
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
         ".";
 
-      // Создаём mappers и генерируем asm текст
+      // Create mappers and generate asm text
       diffMapper1 = new SourceAsmMapper(sourceRoot);
       diffMapper2 = new SourceAsmMapper(sourceRoot);
       const text1 = diffMapper1.build(funcs1);
       const text2 = diffMapper2.build(funcs2);
 
-      // Сохраняем .asm файлы в temp с уникальными именами
+      // Save .asm files to temp with unique names
       const tmpDir = os.tmpdir();
       const name1 = path.basename(binary1);
       const name2 = path.basename(binary2);
@@ -200,13 +200,13 @@ async function cmdDiffAssembly(): Promise<void> {
       fs.writeFileSync(diffAsmPath1, text1, "utf-8");
       fs.writeFileSync(diffAsmPath2, text2, "utf-8");
 
-      // Очищаем предыдущие diff decorations
+      // Clear previous diff decorations
       diffDecorations1?.dispose();
       diffDecorations2?.dispose();
       diffDecorations1 = new DecorationManager();
       diffDecorations2 = new DecorationManager();
 
-      // Открываем первый asm справа от исходника
+      // Open first asm to the right of the source
       const doc1 = await vscode.workspace.openTextDocument(
         vscode.Uri.file(diffAsmPath1),
       );
@@ -216,7 +216,7 @@ async function cmdDiffAssembly(): Promise<void> {
         preview: false,
       });
 
-      // Открываем второй asm ещё правее
+      // Open second asm further to the right
       const doc2 = await vscode.workspace.openTextDocument(
         vscode.Uri.file(diffAsmPath2),
       );
@@ -226,7 +226,7 @@ async function cmdDiffAssembly(): Promise<void> {
         preview: false,
       });
 
-      // Применяем цветовой маппинг на оба asm-редактора
+      // Apply color mapping to both asm editors
       applyDiffColors();
 
       vscode.window.showInformationMessage(
@@ -240,7 +240,7 @@ async function cmdDiffAssembly(): Promise<void> {
   }
 }
 
-/** Применяет цветовой маппинг исходник↔asm для обоих diff-редакторов */
+/** Applies source↔asm color mapping for both diff editors */
 function applyDiffColors(): void {
   const sourceEditor = findSourceEditor();
   if (!sourceEditor) return;
@@ -258,7 +258,7 @@ function applyDiffColors(): void {
   }
 }
 
-/** Строит MappingEntry[] из mapper для конкретного source-файла */
+/** Builds MappingEntry[] from a mapper for a specific source file */
 function buildMappingEntries(
   m: SourceAsmMapper,
   filePath: string,
@@ -378,7 +378,7 @@ function onSelectionChanged(
   const line = event.selections[0].active.line;
   const editorPath = editor.document.uri.fsPath;
 
-  // Основной asm editor
+  // Main asm editor
   if (mapper && asmEditor) {
     if (asmFilePath && editorPath === asmFilePath) {
       handleAsmClick(line);
@@ -402,7 +402,7 @@ function onSelectionChanged(
     return;
   }
 
-  // Исходник — обновляем все активные маппинги
+  // Source file — update all active mappings
   if (isSourceEditor(editor)) {
     if (mapper && asmEditor) {
       handleSourceClick(editor, line);
@@ -547,7 +547,7 @@ function handleAsmClick(asmLine: number): void {
 
 async function cmdLiveMode(): Promise<void> {
   try {
-    // Если live mode уже активен — останавливаем
+    // If live mode is already active — stop it
     if (liveActive) {
       stopLiveMode();
       statusBarItem?.hide();
@@ -555,14 +555,14 @@ async function cmdLiveMode(): Promise<void> {
       return;
     }
 
-    // Находим активный source editor
+    // Find the active source editor
     const sourceEditor = findSourceEditor();
     if (!sourceEditor) {
       vscode.window.showErrorMessage("YASM: Open a C/C++ source file first");
       return;
     }
 
-    // Загружаем конфиг
+    // Load config
     const config = await loadConfig();
     if (!config.liveMode) {
       vscode.window.showErrorMessage(
@@ -579,20 +579,20 @@ async function cmdLiveMode(): Promise<void> {
     liveSourceFile = sourceEditor.document.uri.fsPath;
     liveActive = true;
 
-    // Output channel для ошибок компиляции
+    // Output channel for compilation errors
     if (!liveOutputChannel) {
       liveOutputChannel = vscode.window.createOutputChannel("YASM Live");
     }
     liveOutputChannel.clear();
 
-    // Создаём DecorationManager для live mode
+    // Create DecorationManager for live mode
     liveDecorations?.dispose();
     liveDecorations = new DecorationManager();
 
-    // Первый запуск
+    // Initial run
     await liveRefresh();
 
-    // Настраиваем триггер
+    // Set up the trigger
     if (liveConfig.trigger === "live") {
       const interval = liveConfig.interval || 500;
       let lastContent = sourceEditor.document.getText();
@@ -604,7 +604,7 @@ async function cmdLiveMode(): Promise<void> {
         const currentContent = editor.document.getText();
         if (currentContent !== lastContent) {
           lastContent = currentContent;
-          // Сохраняем файл перед компиляцией (компилятор читает с диска)
+          // Save file before compilation (compiler reads from disk)
           editor.document.save().then(() => {
             liveRefresh().catch((err) => showLiveError(err));
           });
@@ -634,16 +634,16 @@ async function cmdLiveMode(): Promise<void> {
 
 async function liveRefresh(): Promise<void> {
   if (!liveActive || !liveConfig || !liveTool || !liveSourceFile) return;
-  if (liveRefreshing) return; // предыдущий refresh ещё идёт
+  if (liveRefreshing) return; // previous refresh still in progress
 
   liveRefreshing = true;
 
-  // Отменяем предыдущую компиляцию если она ещё работает
+  // Cancel previous compilation if it's still running
   liveAbortController?.abort();
   liveAbortController = new AbortController();
 
   try {
-    // 1. Компилируем исходник в .o
+    // 1. Compile source into .o
     const result = await compileToObject(
       liveSourceFile,
       liveConfig.compileCommand,
@@ -651,27 +651,27 @@ async function liveRefresh(): Promise<void> {
     );
 
     if (!result.success) {
-      // Показываем ошибки компиляции в Output Channel
+      // Show compilation errors in Output Channel
       if (liveOutputChannel && result.stderr !== "Compilation cancelled") {
         liveOutputChannel.clear();
         liveOutputChannel.appendLine("── Compilation errors ──");
         liveOutputChannel.appendLine(result.stderr);
-        liveOutputChannel.show(true); // true = не фокусировать
+        liveOutputChannel.show(true); // true = don't focus
       }
       statusBarItem.text = "$(error) YASM Live: compile error";
       return;
     }
 
-    // Компиляция успешна — очищаем Output Channel
+    // Compilation succeeded — clear Output Channel
     liveOutputChannel?.clear();
 
-    // Запоминаем путь для cleanup
+    // Remember path for cleanup
     if (liveObjectPath && liveObjectPath !== result.outputPath) {
       cleanupObjectFile(liveObjectPath);
     }
     liveObjectPath = result.outputPath;
 
-    // 2. Дизассемблируем .o
+    // 2. Disassemble .o
     invalidateCache(result.outputPath);
     const rawOutput = await disassemble(
       result.outputPath,
@@ -682,15 +682,15 @@ async function liveRefresh(): Promise<void> {
 
     if (!rawOutput.trim()) return;
 
-    // 3. Парсим
+    // 3. Parse
     const functions = parseObjdumpOutput(rawOutput, liveTool.type);
     if (functions.length === 0) return;
 
-    // 4. Строим маппинг и текст
+    // 4. Build mapping and text
     liveMapper = new SourceAsmMapper(liveSourceRoot);
     const asmText = liveMapper.build(functions);
 
-    // 5. Пишем .asm файл во временную директорию
+    // 5. Write .asm file to temp directory
     const baseName = path.basename(
       liveSourceFile,
       path.extname(liveSourceFile),
@@ -700,18 +700,18 @@ async function liveRefresh(): Promise<void> {
     fs.writeFileSync(tmpAsmPath, asmText, "utf-8");
     liveAsmPath = tmpAsmPath;
 
-    // 6. Открываем или обновляем asm editor
+    // 6. Open or update asm editor
     if (liveAsmEditor) {
-      // Документ уже открыт — обновляем содержимое через revert
-      // (файл уже перезаписан на диске, просто перечитываем)
+      // Document already open — update contents via revert
+      // (file already overwritten on disk, just re-read it)
       const doc = liveAsmEditor.document;
       if (doc.uri.fsPath === tmpAsmPath) {
-        // Перечитываем файл с диска
+        // Re-read file from disk
         await vscode.commands.executeCommand(
           "workbench.action.files.revert",
           doc.uri,
         );
-        // После revert нужно заново получить editor
+        // After revert we need to re-acquire the editor
         liveAsmEditor = vscode.window.visibleTextEditors.find(
           (e) => e.document.uri.fsPath === tmpAsmPath,
         );
@@ -729,7 +729,7 @@ async function liveRefresh(): Promise<void> {
       });
     }
 
-    // 7. Применяем цветовой маппинг
+    // 7. Apply color mapping
     const sourceEditor = findSourceEditorByPath(liveSourceFile);
     if (sourceEditor && liveAsmEditor && liveDecorations && liveMapper) {
       const entries = buildMappingEntries(liveMapper, liveSourceFile);
@@ -780,7 +780,7 @@ function stopLiveMode(): void {
   liveAsmPath = undefined;
   liveRefreshing = false;
 
-  // Удаляем временный .o файл
+  // Remove temporary .o file
   if (liveObjectPath) {
     cleanupObjectFile(liveObjectPath);
     liveObjectPath = undefined;
