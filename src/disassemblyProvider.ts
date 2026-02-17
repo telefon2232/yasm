@@ -44,7 +44,7 @@ export async function disassemble(
   let stdout: string;
   try {
     const result = await execFileAsync(tool.path, args, {
-      maxBuffer: 256 * 1024 * 1024,
+      maxBuffer: 5 * 1024 * 1024 * 1024,
       timeout: 120_000,
     });
     stdout = result.stdout;
@@ -56,7 +56,7 @@ export async function disassemble(
     }
     if (err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
       throw new Error(
-        `objdump output too large (>256MB). Try limiting sections in .yasm.json`,
+        `objdump output too large (>5GB). Try limiting sections in .yasm.json`,
       );
     }
     const stderr = (err?.stderr || "").slice(0, 300);
