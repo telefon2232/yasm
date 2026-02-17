@@ -218,7 +218,7 @@ async function disassemble(binaryPath, tool, sections, extraArgs) {
   let stdout;
   try {
     const result = await execFileAsync2(tool.path, args, {
-      maxBuffer: 256 * 1024 * 1024,
+      maxBuffer: 5 * 1024 * 1024 * 1024,
       timeout: 12e4
     });
     stdout = result.stdout;
@@ -230,7 +230,7 @@ async function disassemble(binaryPath, tool, sections, extraArgs) {
     }
     if (err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
       throw new Error(
-        `objdump output too large (>256MB). Try limiting sections in .yasm.json`
+        `objdump output too large (>5GB). Try limiting sections in .yasm.json`
       );
     }
     const stderr = (err?.stderr || "").slice(0, 300);
@@ -425,73 +425,73 @@ var SourceAsmMapper = class {
 // src/decorationManager.ts
 var vscode2 = __toESM(require("vscode"));
 var PALETTE = [
-  // красный
+  // red
   {
     bg: "rgba(255, 120, 120, 0.18)",
     hover: "rgba(255, 100, 100, 0.42)",
     border: "#ff6666"
   },
-  // синий
+  // blue
   {
     bg: "rgba(120, 180, 255, 0.18)",
     hover: "rgba(100, 160, 255, 0.42)",
     border: "#6699ff"
   },
-  // зелёный
+  // green
   {
     bg: "rgba(100, 220, 100, 0.18)",
     hover: "rgba(80, 200, 80, 0.42)",
     border: "#44cc44"
   },
-  // жёлтый
+  // yellow
   {
     bg: "rgba(255, 210, 80, 0.18)",
     hover: "rgba(255, 200, 50, 0.42)",
     border: "#ddaa00"
   },
-  // фиолетовый
+  // purple
   {
     bg: "rgba(200, 130, 255, 0.18)",
     hover: "rgba(180, 100, 255, 0.42)",
     border: "#aa66ff"
   },
-  // оранжевый
+  // orange
   {
     bg: "rgba(255, 170, 100, 0.18)",
     hover: "rgba(255, 150, 70, 0.42)",
     border: "#ee8833"
   },
-  // бирюзовый
+  // teal
   {
     bg: "rgba(80, 220, 220, 0.18)",
     hover: "rgba(50, 200, 200, 0.42)",
     border: "#33bbbb"
   },
-  // розовый
+  // pink
   {
     bg: "rgba(255, 130, 190, 0.18)",
     hover: "rgba(255, 100, 170, 0.42)",
     border: "#ee66aa"
   },
-  // салатовый
+  // lime
   {
     bg: "rgba(170, 220, 100, 0.18)",
     hover: "rgba(150, 210, 70, 0.42)",
     border: "#88bb33"
   },
-  // лавандовый
+  // lavender
   {
     bg: "rgba(180, 180, 255, 0.18)",
     hover: "rgba(160, 160, 255, 0.42)",
     border: "#9999ff"
   },
-  // коралловый
+  // coral
   {
     bg: "rgba(255, 160, 150, 0.18)",
     hover: "rgba(255, 130, 120, 0.42)",
     border: "#ee7766"
   },
-  // мятный
+  // mint
   {
     bg: "rgba(120, 220, 190, 0.18)",
     hover: "rgba(90, 210, 170, 0.42)",
@@ -508,14 +508,14 @@ var DecorationManager = class {
   constructor() {
     for (const color of PALETTE) {
       this.colorSlots.push({
-        // Постоянный фон — цветная полоска, всегда видна
+        // Persistent background — colored stripe, always visible
         normal: vscode2.window.createTextEditorDecorationType({
           backgroundColor: color.bg,
           isWholeLine: true,
           overviewRulerColor: color.border,
           overviewRulerLane: vscode2.OverviewRulerLane.Left
         }),
-        // Hover — яркий фон + толстая цветная рамка слева
+        // Hover — bright background + thick colored border on the left
         hover: vscode2.window.createTextEditorDecorationType({
           backgroundColor: color.hover,
           isWholeLine: true,
@@ -576,8 +576,7 @@ var DecorationManager = class {
   highlightHover(sourceEditor, asmEditor2, sourceKey, sourceLine, asmLines) {
     this.clearHover(sourceEditor, asmEditor2);
     const ci = this.lineColorMap.get(sourceKey);
-    if (ci === void 0)
-      return;
+    if (ci === void 0) return;
     const slot = this.colorSlots[ci];
     if (sourceLine >= 0 && sourceLine < sourceEditor.document.lineCount) {
       sourceEditor.setDecorations(slot.hover, [
@@ -773,8 +772,7 @@ function deactivate() {
   stopLiveMode();
 }
 function updateStatusBar(config, funcCount, toolType) {
-  if (!statusBarItem)
-    return;
+  if (!statusBarItem) return;
   const binaryName = path4.basename(config.binary);
   statusBarItem.text = `$(file-binary) ${binaryName} | ${funcCount} funcs | ${toolType}`;
   statusBarItem.tooltip = `YASM: ${config.binary}
@@ -807,16 +805,14 @@ async function cmdDiffAssembly() {
       canSelectMany: false,
       title: "Select first binary (e.g. compiled with -O1)"
     });
-    if (!pick1 || pick1.length === 0)
-      return;
+    if (!pick1 || pick1.length === 0) return;
     const pick2 = await vscode3.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: false,
       title: "Select second binary (e.g. compiled with -O2)"
     });
-    if (!pick2 || pick2.length === 0)
-      return;
+    if (!pick2 || pick2.length === 0) return;
     const binary1 = pick1[0].fsPath;
     const binary2 = pick2[0].fsPath;
     let config;
@@ -886,8 +882,7 @@ async function cmdDiffAssembly() {
 }
 function applyDiffColors() {
   const sourceEditor = findSourceEditor();
-  if (!sourceEditor)
-    return;
+  if (!sourceEditor) return;
   const filePath = sourceEditor.document.uri.fsPath;
   if (diffMapper1 && diffAsmEditor1 && diffDecorations1) {
     const entries = buildMappingEntries(diffMapper1, filePath);
@@ -904,12 +899,10 @@ function buildMappingEntries(m, filePath) {
   const entries = [];
   for (const [key, asmLines] of sourceToAsm) {
     const lastColon = key.lastIndexOf(":");
-    if (lastColon === -1)
-      continue;
+    if (lastColon === -1) continue;
     const keyFile = key.substring(0, lastColon);
     const keyLine = parseInt(key.substring(lastColon + 1), 10);
-    if (keyFile !== normFile)
-      continue;
+    if (keyFile !== normFile) continue;
     entries.push({
       sourceKey: key,
       sourceLine: keyLine - 1,
@@ -963,8 +956,7 @@ async function loadAndShow() {
 }
 function applyColors() {
   const sourceEditor = findSourceEditor();
-  if (!sourceEditor || !asmEditor || !mapper)
-    return;
+  if (!sourceEditor || !asmEditor || !mapper) return;
   const entries = buildMappingEntries(mapper, sourceEditor.document.uri.fsPath);
   decorations.applyColorMapping(sourceEditor, asmEditor, entries);
 }
@@ -1052,13 +1044,11 @@ function handleDiffSourceClick(sourceEditor, line, m, dec, asmEd) {
   }
 }
 function handleDiffAsmClick(m, dec, asmEd, asmLine) {
-  if (!dec || !asmEd)
-    return;
+  if (!dec || !asmEd) return;
   const source = m.getSourceForAsmLine(asmLine);
   const sourceEditor = findSourceEditor();
   if (!source || !sourceEditor) {
-    if (sourceEditor)
-      dec.clearHover(sourceEditor, asmEd);
+    if (sourceEditor) dec.clearHover(sourceEditor, asmEd);
     return;
   }
   const absPath = m.resolveToWorkspace(source.file);
@@ -1069,8 +1059,7 @@ function handleDiffAsmClick(m, dec, asmEd, asmLine) {
   dec.scrollTo(sourceEditor, editorLine);
 }
 function handleSourceClick(sourceEditor, line) {
-  if (!mapper || !asmEditor)
-    return;
+  if (!mapper || !asmEditor) return;
   const filePath = sourceEditor.document.uri.fsPath;
   const asmLines = mapper.getAsmLinesForSource(filePath, line + 1);
   if (asmLines.length > 0) {
@@ -1089,8 +1078,7 @@ function handleSourceClick(sourceEditor, line) {
   }
 }
 function handleAsmClick(asmLine) {
-  if (!mapper || !asmEditor)
-    return;
+  if (!mapper || !asmEditor) return;
   const source = mapper.getSourceForAsmLine(asmLine);
   if (!source) {
     const sourceEditor2 = findSourceEditor();
@@ -1157,8 +1145,7 @@ async function cmdLiveMode() {
       let lastContent = sourceEditor.document.getText();
       liveTimer = setInterval(() => {
         const editor = findSourceEditorByPath(liveSourceFile);
-        if (!editor)
-          return;
+        if (!editor) return;
         const currentContent = editor.document.getText();
         if (currentContent !== lastContent) {
           lastContent = currentContent;
@@ -1184,10 +1171,8 @@ async function cmdLiveMode() {
   }
 }
 async function liveRefresh() {
-  if (!liveActive || !liveConfig || !liveTool || !liveSourceFile)
-    return;
-  if (liveRefreshing)
-    return;
+  if (!liveActive || !liveConfig || !liveTool || !liveSourceFile) return;
+  if (liveRefreshing) return;
   liveRefreshing = true;
   liveAbortController?.abort();
   liveAbortController = new AbortController();
@@ -1219,11 +1204,9 @@ async function liveRefresh() {
       liveSections,
       liveExtraArgs
     );
-    if (!rawOutput.trim())
-      return;
+    if (!rawOutput.trim()) return;
     const functions = parseObjdumpOutput(rawOutput, liveTool.type);
-    if (functions.length === 0)
-      return;
+    if (functions.length === 0) return;
     liveMapper = new SourceAsmMapper(liveSourceRoot);
     const asmText = liveMapper.build(functions);
     const baseName = path4.basename(
@@ -1267,8 +1250,7 @@ async function liveRefresh() {
   }
 }
 function updateLiveStatusBar(triggerLabel, funcCount) {
-  if (!statusBarItem)
-    return;
+  if (!statusBarItem) return;
   const funcs = funcCount !== void 0 ? ` | ${funcCount} funcs` : "";
   statusBarItem.text = `$(zap) YASM Live [${triggerLabel}]${funcs}`;
   statusBarItem.tooltip = `YASM Live Mode
@@ -1278,8 +1260,7 @@ Click to refresh`;
   statusBarItem.show();
 }
 function stopLiveMode() {
-  if (!liveActive)
-    return;
+  if (!liveActive) return;
   liveActive = false;
   if (liveTimer) {
     clearInterval(liveTimer);
