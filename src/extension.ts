@@ -836,16 +836,23 @@ function findSourceEditor(): vscode.TextEditor | undefined {
 }
 
 function isSourceEditor(editor: vscode.TextEditor): boolean {
+  if (editor.document.uri.scheme !== "file") return false;
   const langId = editor.document.languageId;
+  const ext = editor.document.uri.fsPath.split(".").pop()?.toLowerCase() ?? "";
   return (
-    editor.document.uri.scheme === "file" &&
-    (langId === "c" ||
-      langId === "cpp" ||
-      langId === "objective-c" ||
-      langId === "objective-cpp" ||
-      langId === "fortran" ||
-      langId === "FortranFreeForm" ||
-      langId === "FortranFixedForm" ||
-      langId === "rust")
+    langId === "c" ||
+    langId === "cpp" ||
+    langId === "objective-c" ||
+    langId === "objective-cpp" ||
+    langId === "fortran" ||
+    langId === "FortranFreeForm" ||
+    langId === "FortranFixedForm" ||
+    langId === "rust" ||
+    ext === "f90" ||
+    ext === "f95" ||
+    ext === "f03" ||
+    ext === "f08" ||
+    ext === "f" ||
+    ext === "for"
   );
 }

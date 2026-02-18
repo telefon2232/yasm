@@ -1325,8 +1325,10 @@ function findSourceEditor() {
   return vscode3.window.visibleTextEditors.find((e) => isSourceEditor(e));
 }
 function isSourceEditor(editor) {
+  if (editor.document.uri.scheme !== "file") return false;
   const langId = editor.document.languageId;
-  return editor.document.uri.scheme === "file" && (langId === "c" || langId === "cpp" || langId === "objective-c" || langId === "objective-cpp" || langId === "fortran" || langId === "FortranFreeForm" || langId === "FortranFixedForm" || langId === "rust");
+  const ext = editor.document.uri.fsPath.split(".").pop()?.toLowerCase() ?? "";
+  return langId === "c" || langId === "cpp" || langId === "objective-c" || langId === "objective-cpp" || langId === "fortran" || langId === "FortranFreeForm" || langId === "FortranFixedForm" || langId === "rust" || ext === "f90" || ext === "f95" || ext === "f03" || ext === "f08" || ext === "f" || ext === "for";
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
