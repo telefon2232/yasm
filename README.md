@@ -150,20 +150,18 @@ gcc -g -O2 -o main_O2 main.c math_utils.c
 
 ---
 
-## 📖 Пример (многофайловый проект)
+## 📖 Примеры
 
-В папке `example/` лежит готовый пример из двух файлов:
+В папке `example/` три готовых примера на разных языках — все реализуют одну логику (`square`, `sum_squares`):
 
-```
-example/
-├── main.c            — точка входа
-├── math_utils.h      — заголовок
-├── math_utils.c      — реализация (square, sum_squares)
-└── .yasm.json        — конфиг
-```
+| Язык | Директория | Команда сборки |
+|------|------------|----------------|
+| C | `example/c/` | `gcc -g -O1 -o main main.c math_utils.c` |
+| Fortran | `example/fortran/` | `gfortran -g -O1 -o main main.f90 math_utils.f90` |
+| Rust | `example/rust/` | `cargo build` |
 
 ```bash
-cd example
+cd example/c   # или fortran/ или rust/
 gcc -g -O1 -o main main.c math_utils.c
 code .
 ```
