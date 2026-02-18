@@ -19,6 +19,8 @@ Debug: F5 in VS Code launches Extension Development Host.
 
 No test framework configured — manual testing only via Extension Development Host.
 
+**После каждого изменения кода** обязательно пересобирать VSIX: `npm run compile` → `npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix`.
+
 ## Architecture
 
 Single-bundle VS Code extension. esbuild bundles all `src/*.ts` into `bin/extension.js`.
@@ -40,6 +42,8 @@ config.ts (load .yasm.json)
 **Key types:** `AsmLensConfig` (config.ts), `DetectedTool`/`ObjdumpType` (toolDetector.ts), `AsmFunction`/`AsmLine` (objdumpParser.ts), `SourceLocation` (sourceAsmMapper.ts), `MappingEntry` (decorationManager.ts).
 
 **Path normalization:** All paths converted to forward slashes + lowercase drive letters via `sourceAsmMapper.normalizePath()` for cross-platform consistency. DWARF line numbers are 1-based, editor lines are 0-based.
+
+**Virtual Document Provider** (`asmDocumentProvider.ts`): при `"virtualDoc": true` в `.yasm.json` asm-контент открывается через кастомную URI-схему `yasm://` вместо записи файла на диск. Обходит лимит 50MB синхронизации VS Code Remote SSH. Документ read-only, контент живёт в памяти расширения. Идентификация редакторов через `uri.toString()` (универсально для `file://` и `yasm://`).
 
 **Commands:** `yasm.showAssembly`, `yasm.refresh`, `yasm.initConfig`, `yasm.diffAssembly`. Config file: `.yasm.json`.
 

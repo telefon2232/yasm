@@ -12,7 +12,17 @@ gfortran -g -O1 -o main main.f90 math_utils.f90
 - `-g` — DWARF-отладка (обязательно, без неё маппинг не работает)
 - `-O1` — оптимизации, чтобы ассемблер был интереснее (можно `-O0`, `-O2`)
 
-### 2. Открыть папку fortran в VS Code
+### 2. Установить расширение Modern Fortran
+
+VS Code не распознаёт `.f90` без языкового расширения. Установите
+[Modern Fortran](https://marketplace.visualstudio.com/items?itemName=fortran-lang.linter-gfortran),
+чтобы YASM мог определить исходник как Fortran:
+
+```bash
+code --install-extension fortran-lang.linter-gfortran
+```
+
+### 3. Открыть папку fortran в VS Code
 
 ```bash
 code .

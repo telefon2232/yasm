@@ -15,14 +15,20 @@ import { parseObjdumpOutput } from "./objdumpParser";
 import { SourceAsmMapper } from "./sourceAsmMapper";
 import { DecorationManager, MappingEntry } from "./decorationManager";
 import { compileToObject, cleanupObjectFile } from "./liveCompiler";
+import {
+  AsmDocumentProvider,
+  ASM_SCHEME,
+  buildAsmUri,
+} from "./asmDocumentProvider";
 
 let decorations: DecorationManager;
 let mapper: SourceAsmMapper;
 let asmEditor: vscode.TextEditor | undefined;
 let currentConfig: AsmLensConfig | undefined;
 let binaryWatcher: vscode.FileSystemWatcher | undefined;
-let asmFilePath: string | undefined;
+let asmDocUri: string | undefined; // URI.toString() для идентификации asm-редактора
 let statusBarItem: vscode.StatusBarItem;
+let asmProvider: AsmDocumentProvider;
 
 // Diff mode state
 let diffDecorations1: DecorationManager | undefined;
@@ -31,8 +37,8 @@ let diffMapper1: SourceAsmMapper | undefined;
 let diffMapper2: SourceAsmMapper | undefined;
 let diffAsmEditor1: vscode.TextEditor | undefined;
 let diffAsmEditor2: vscode.TextEditor | undefined;
-let diffAsmPath1: string | undefined;
-let diffAsmPath2: string | undefined;
+let diffDocUri1: string | undefined;
+let diffDocUri2: string | undefined;
 
 // Live mode state
 let liveActive = false;
@@ -43,7 +49,7 @@ let liveObjectPath: string | undefined;
 let liveMapper: SourceAsmMapper | undefined;
 let liveDecorations: DecorationManager | undefined;
 let liveAsmEditor: vscode.TextEditor | undefined;
-let liveAsmPath: string | undefined;
+let liveDocUri: string | undefined;
 let liveTimer: ReturnType<typeof setInterval> | undefined;
 let liveSaveDisposable: vscode.Disposable | undefined;
 let liveAbortController: AbortController | undefined;
@@ -52,11 +58,20 @@ let liveOutputChannel: vscode.OutputChannel | undefined;
 let liveSections: string[] = [".text"];
 let liveExtraArgs: string[] = [];
 let liveSourceRoot: string = ".";
+let liveVirtualDoc: boolean = false;
 
 export function activate(context: vscode.ExtensionContext): void {
   decorations = new DecorationManager();
+  asmProvider = new AsmDocumentProvider();
 
   context.subscriptions.push(decorations);
+  context.subscriptions.push(asmProvider);
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      ASM_SCHEME,
+      asmProvider,
+    ),
+  );
 
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
@@ -191,14 +206,27 @@ async function cmdDiffAssembly(): Promise<void> {
       const text1 = diffMapper1.build(funcs1);
       const text2 = diffMapper2.build(funcs2);
 
-      // Save .asm files to temp with unique names
-      const tmpDir = os.tmpdir();
       const name1 = path.basename(binary1);
       const name2 = path.basename(binary2);
-      diffAsmPath1 = path.join(tmpDir, `${name1}_left.asm`);
-      diffAsmPath2 = path.join(tmpDir, `${name2}_right.asm`);
-      fs.writeFileSync(diffAsmPath1, text1, "utf-8");
-      fs.writeFileSync(diffAsmPath2, text2, "utf-8");
+
+      let uri1: vscode.Uri;
+      let uri2: vscode.Uri;
+      if (config?.virtualDoc) {
+        uri1 = buildAsmUri(`${name1}_left.asm`);
+        uri2 = buildAsmUri(`${name2}_right.asm`);
+        asmProvider.update(uri1, text1);
+        asmProvider.update(uri2, text2);
+      } else {
+        const tmpDir = os.tmpdir();
+        const p1 = path.join(tmpDir, `${name1}_left.asm`);
+        const p2 = path.join(tmpDir, `${name2}_right.asm`);
+        fs.writeFileSync(p1, text1, "utf-8");
+        fs.writeFileSync(p2, text2, "utf-8");
+        uri1 = vscode.Uri.file(p1);
+        uri2 = vscode.Uri.file(p2);
+      }
+      diffDocUri1 = uri1.toString();
+      diffDocUri2 = uri2.toString();
 
       // Clear previous diff decorations
       diffDecorations1?.dispose();
@@ -207,9 +235,7 @@ async function cmdDiffAssembly(): Promise<void> {
       diffDecorations2 = new DecorationManager();
 
       // Open first asm to the right of the source
-      const doc1 = await vscode.workspace.openTextDocument(
-        vscode.Uri.file(diffAsmPath1),
-      );
+      const doc1 = await vscode.workspace.openTextDocument(uri1);
       diffAsmEditor1 = await vscode.window.showTextDocument(doc1, {
         viewColumn: vscode.ViewColumn.Two,
         preserveFocus: true,
@@ -217,9 +243,7 @@ async function cmdDiffAssembly(): Promise<void> {
       });
 
       // Open second asm further to the right
-      const doc2 = await vscode.workspace.openTextDocument(
-        vscode.Uri.file(diffAsmPath2),
-      );
+      const doc2 = await vscode.workspace.openTextDocument(uri2);
       diffAsmEditor2 = await vscode.window.showTextDocument(doc2, {
         viewColumn: vscode.ViewColumn.Three,
         preserveFocus: true,
@@ -321,12 +345,20 @@ async function loadAndShow(): Promise<void> {
   mapper = new SourceAsmMapper(config.sourceRoot);
   const asmText = mapper.build(functions);
 
-  // Save .asm file next to binary
-  asmFilePath = config.binary.replace(/(\.[^.]+)?$/, ".asm");
-  fs.writeFileSync(asmFilePath, asmText, "utf-8");
+  let asmUri: vscode.Uri;
+  if (config.virtualDoc) {
+    // Виртуальный документ — контент в памяти, обходит лимит 50MB Remote SSH
+    const asmName = path.basename(config.binary).replace(/(\.[^.]+)?$/, ".asm");
+    asmUri = buildAsmUri(asmName);
+    asmProvider.update(asmUri, asmText);
+  } else {
+    // Обычный режим — файл на диске
+    const asmFilePath = config.binary.replace(/(\.[^.]+)?$/, ".asm");
+    fs.writeFileSync(asmFilePath, asmText, "utf-8");
+    asmUri = vscode.Uri.file(asmFilePath);
+  }
+  asmDocUri = asmUri.toString();
 
-  // Open .asm file as a real file in editor
-  const asmUri = vscode.Uri.file(asmFilePath);
   const doc = await vscode.workspace.openTextDocument(asmUri);
   asmEditor = await vscode.window.showTextDocument(doc, {
     viewColumn: vscode.ViewColumn.Beside,
@@ -339,8 +371,11 @@ async function loadAndShow(): Promise<void> {
 
   setupBinaryWatcher(config.binary);
 
+  const asmLabel = config.virtualDoc
+    ? path.basename(config.binary).replace(/(\.[^.]+)?$/, ".asm")
+    : path.basename(config.binary.replace(/(\.[^.]+)?$/, ".asm"));
   vscode.window.showInformationMessage(
-    `YASM: ${functions.length} functions → ${path.basename(asmFilePath)}`,
+    `YASM: ${functions.length} functions → ${asmLabel}`,
   );
 }
 
@@ -376,28 +411,28 @@ function onSelectionChanged(
 ): void {
   const editor = event.textEditor;
   const line = event.selections[0].active.line;
-  const editorPath = editor.document.uri.fsPath;
+  const editorUri = editor.document.uri.toString();
 
   // Main asm editor
   if (mapper && asmEditor) {
-    if (asmFilePath && editorPath === asmFilePath) {
+    if (asmDocUri && editorUri === asmDocUri) {
       handleAsmClick(line);
       return;
     }
   }
 
   // Diff asm editors
-  if (diffAsmPath1 && editorPath === diffAsmPath1 && diffMapper1) {
+  if (diffDocUri1 && editorUri === diffDocUri1 && diffMapper1) {
     handleDiffAsmClick(diffMapper1, diffDecorations1, diffAsmEditor1, line);
     return;
   }
-  if (diffAsmPath2 && editorPath === diffAsmPath2 && diffMapper2) {
+  if (diffDocUri2 && editorUri === diffDocUri2 && diffMapper2) {
     handleDiffAsmClick(diffMapper2, diffDecorations2, diffAsmEditor2, line);
     return;
   }
 
   // Live mode asm editor
-  if (liveAsmPath && editorPath === liveAsmPath && liveMapper) {
+  if (liveDocUri && editorUri === liveDocUri && liveMapper) {
     handleDiffAsmClick(liveMapper, liveDecorations, liveAsmEditor, line);
     return;
   }
@@ -576,6 +611,7 @@ async function cmdLiveMode(): Promise<void> {
     liveSections = config.sections || [".text"];
     liveExtraArgs = config.objdumpArgs || [];
     liveSourceRoot = config.sourceRoot;
+    liveVirtualDoc = config.virtualDoc === true;
     liveSourceFile = sourceEditor.document.uri.fsPath;
     liveActive = true;
 
@@ -690,43 +726,54 @@ async function liveRefresh(): Promise<void> {
     liveMapper = new SourceAsmMapper(liveSourceRoot);
     const asmText = liveMapper.build(functions);
 
-    // 5. Write .asm file to temp directory
+    // 5–6. Создать/обновить asm-документ и открыть в редакторе
     const baseName = path.basename(
       liveSourceFile,
       path.extname(liveSourceFile),
     );
-    const tmpAsmPath = path.join(os.tmpdir(), `yasm_live_${baseName}.asm`);
 
-    fs.writeFileSync(tmpAsmPath, asmText, "utf-8");
-    liveAsmPath = tmpAsmPath;
+    if (liveVirtualDoc) {
+      const liveUri = buildAsmUri(`yasm_live_${baseName}.asm`);
+      liveDocUri = liveUri.toString();
+      asmProvider.update(liveUri, asmText);
+      // onDidChange автоматически обновит содержимое открытого документа
 
-    // 6. Open or update asm editor
-    if (liveAsmEditor) {
-      // Document already open — update contents via revert
-      // (file already overwritten on disk, just re-read it)
-      const doc = liveAsmEditor.document;
-      if (doc.uri.fsPath === tmpAsmPath) {
-        // Re-read file from disk
-        await vscode.commands.executeCommand(
-          "workbench.action.files.revert",
-          doc.uri,
-        );
-        // After revert we need to re-acquire the editor
-        liveAsmEditor = vscode.window.visibleTextEditors.find(
-          (e) => e.document.uri.fsPath === tmpAsmPath,
-        );
+      if (!liveAsmEditor) {
+        const doc = await vscode.workspace.openTextDocument(liveUri);
+        liveAsmEditor = await vscode.window.showTextDocument(doc, {
+          viewColumn: vscode.ViewColumn.Beside,
+          preserveFocus: true,
+          preview: false,
+        });
       }
-    }
+    } else {
+      const tmpAsmPath = path.join(os.tmpdir(), `yasm_live_${baseName}.asm`);
+      fs.writeFileSync(tmpAsmPath, asmText, "utf-8");
+      liveDocUri = vscode.Uri.file(tmpAsmPath).toString();
 
-    if (!liveAsmEditor) {
-      const doc = await vscode.workspace.openTextDocument(
-        vscode.Uri.file(tmpAsmPath),
-      );
-      liveAsmEditor = await vscode.window.showTextDocument(doc, {
-        viewColumn: vscode.ViewColumn.Beside,
-        preserveFocus: true,
-        preview: false,
-      });
+      if (liveAsmEditor) {
+        const doc = liveAsmEditor.document;
+        if (doc.uri.fsPath === tmpAsmPath) {
+          await vscode.commands.executeCommand(
+            "workbench.action.files.revert",
+            doc.uri,
+          );
+          liveAsmEditor = vscode.window.visibleTextEditors.find(
+            (e) => e.document.uri.fsPath === tmpAsmPath,
+          );
+        }
+      }
+
+      if (!liveAsmEditor) {
+        const doc = await vscode.workspace.openTextDocument(
+          vscode.Uri.file(tmpAsmPath),
+        );
+        liveAsmEditor = await vscode.window.showTextDocument(doc, {
+          viewColumn: vscode.ViewColumn.Beside,
+          preserveFocus: true,
+          preview: false,
+        });
+      }
     }
 
     // 7. Apply color mapping
@@ -777,7 +824,7 @@ function stopLiveMode(): void {
   liveConfig = undefined;
   liveTool = undefined;
   liveSourceFile = undefined;
-  liveAsmPath = undefined;
+  liveDocUri = undefined;
   liveRefreshing = false;
 
   // Remove temporary .o file

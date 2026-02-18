@@ -1,0 +1,9 @@
+src/**
+example/**
+Docs/**
+.vscode/**
+.claude/**
+tsconfig.json
+CLAUDE.md
+nul
+**/*.map

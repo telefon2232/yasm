@@ -2,3 +2,13 @@
 name = "yasm-example"
 version = "0.1.0"
 edition = "2021"
+
+[profile.dev]
+codegen-units = 1
+panic = "abort"
+force-frame-pointers = true
+
+[profile.release]
+codegen-units = 1
+panic = "abort"
+force-frame-pointers = true
