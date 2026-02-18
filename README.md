@@ -40,15 +40,6 @@ gcc -g -O1 -o main main.c
 
 Через команду: `Ctrl+Shift+P` → **YASM: Initialize Config** — создаст конфиг с полным набором полей.
 
-Или вручную:
-
-```json
-{
-  "binary": "./main",
-  "sourceRoot": "."
-}
-```
-
 ### 4. Запустить
 
 `Ctrl+Shift+P` → **YASM: Show Assembly**
@@ -66,6 +57,7 @@ gcc -g -O1 -o main main.c
   "objdump": "objdump",
   "objdumpArgs": ["-M", "intel"],
   "sections": [".text"],
+  "filterByFile": false,
   "liveMode": {
     "compileCommand": "gcc -g -O2 -c {file} -o {output}",
     "trigger": "save",
