@@ -20,8 +20,8 @@ export interface AsmLensConfig {
   objdumpArgs?: string[];
   sections?: string[];
   liveMode?: LiveModeConfig;
-  /** Открывать asm через виртуальный документ (обходит лимит 50MB Remote SSH) */
-  virtualDoc?: boolean;
+  /** Показывать только функции из текущего открытого файла */
+  filterByFile?: boolean;
 }
 
 export function getConfigPath(): string | undefined {
@@ -86,7 +86,7 @@ export async function loadConfig(): Promise<AsmLensConfig> {
     objdumpArgs: Array.isArray(parsed.objdumpArgs) ? parsed.objdumpArgs : [],
     sections: Array.isArray(parsed.sections) ? parsed.sections : [".text"],
     liveMode,
-    virtualDoc: parsed.virtualDoc === true,
+    filterByFile: parsed.filterByFile === true,
   };
 
   if (!fs.existsSync(config.binary)) {
@@ -139,7 +139,7 @@ export async function initConfig(): Promise<void> {
     objdump: "objdump",
     objdumpArgs: ["-M", "intel"],
     sections: [".text"],
-    virtualDoc: false,
+    filterByFile: false,
     liveMode: {
       compileCommand: "gcc -g -O2 -c {file} -o {output}",
       trigger: "save",

@@ -34,7 +34,7 @@ __export(extension_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode4 = __toESM(require("vscode"));
+var vscode3 = __toESM(require("vscode"));
 var path4 = __toESM(require("path"));
 var fs4 = __toESM(require("fs"));
 var os2 = __toESM(require("os"));
@@ -98,7 +98,7 @@ async function loadConfig() {
     objdumpArgs: Array.isArray(parsed.objdumpArgs) ? parsed.objdumpArgs : [],
     sections: Array.isArray(parsed.sections) ? parsed.sections : [".text"],
     liveMode,
-    virtualDoc: parsed.virtualDoc === true
+    filterByFile: parsed.filterByFile === true
   };
   if (!fs.existsSync(config.binary)) {
     throw new Error(`Binary not found: ${config.binary}`);
@@ -143,7 +143,7 @@ async function initConfig() {
     objdump: "objdump",
     objdumpArgs: ["-M", "intel"],
     sections: [".text"],
-    virtualDoc: false,
+    filterByFile: false,
     liveMode: {
       compileCommand: "gcc -g -O2 -c {file} -o {output}",
       trigger: "save",
@@ -705,29 +705,6 @@ function parseCommand(cmd) {
   return result;
 }
 
-// src/asmDocumentProvider.ts
-var vscode3 = __toESM(require("vscode"));
-var ASM_SCHEME = "yasm";
-var AsmDocumentProvider = class {
-  content = /* @__PURE__ */ new Map();
-  _onDidChange = new vscode3.EventEmitter();
-  onDidChange = this._onDidChange.event;
-  /** Обновить (или создать) контент для URI */
-  update(uri, text) {
-    this.content.set(uri.toString(), text);
-    this._onDidChange.fire(uri);
-  }
-  provideTextDocumentContent(uri) {
-    return this.content.get(uri.toString()) ?? "";
-  }
-  dispose() {
-    this._onDidChange.dispose();
-  }
-};
-function buildAsmUri(name) {
-  return vscode3.Uri.parse(`${ASM_SCHEME}:///${encodeURIComponent(name)}`);
-}
-
 // src/extension.ts
 var decorations;
 var mapper;
@@ -736,7 +713,6 @@ var currentConfig;
 var binaryWatcher;
 var asmDocUri;
 var statusBarItem;
-var asmProvider;
 var diffDecorations1;
 var diffDecorations2;
 var diffMapper1;
@@ -762,36 +738,28 @@ var liveOutputChannel;
 var liveSections = [".text"];
 var liveExtraArgs = [];
 var liveSourceRoot = ".";
-var liveVirtualDoc = false;
+var liveFilterByFile = false;
 function activate(context) {
   decorations = new DecorationManager();
-  asmProvider = new AsmDocumentProvider();
   context.subscriptions.push(decorations);
-  context.subscriptions.push(asmProvider);
-  context.subscriptions.push(
-    vscode4.workspace.registerTextDocumentContentProvider(
-      ASM_SCHEME,
-      asmProvider
-    )
-  );
-  statusBarItem = vscode4.window.createStatusBarItem(
-    vscode4.StatusBarAlignment.Left,
+  statusBarItem = vscode3.window.createStatusBarItem(
+    vscode3.StatusBarAlignment.Left,
     100
   );
   statusBarItem.command = "yasm.refresh";
   context.subscriptions.push(statusBarItem);
   context.subscriptions.push(
-    vscode4.commands.registerCommand("yasm.showAssembly", cmdShowAssembly),
-    vscode4.commands.registerCommand("yasm.refresh", cmdRefresh),
-    vscode4.commands.registerCommand("yasm.initConfig", initConfig),
-    vscode4.commands.registerCommand("yasm.diffAssembly", cmdDiffAssembly),
-    vscode4.commands.registerCommand("yasm.liveMode", cmdLiveMode)
+    vscode3.commands.registerCommand("yasm.showAssembly", cmdShowAssembly),
+    vscode3.commands.registerCommand("yasm.refresh", cmdRefresh),
+    vscode3.commands.registerCommand("yasm.initConfig", initConfig),
+    vscode3.commands.registerCommand("yasm.diffAssembly", cmdDiffAssembly),
+    vscode3.commands.registerCommand("yasm.liveMode", cmdLiveMode)
   );
   context.subscriptions.push(
-    vscode4.window.onDidChangeTextEditorSelection(onSelectionChanged)
+    vscode3.window.onDidChangeTextEditorSelection(onSelectionChanged)
   );
   context.subscriptions.push(
-    vscode4.window.onDidChangeVisibleTextEditors((editors) => {
+    vscode3.window.onDidChangeVisibleTextEditors((editors) => {
       if (asmEditor && !editors.find((e) => e === asmEditor)) {
         asmEditor = void 0;
       }
@@ -819,7 +787,7 @@ async function cmdShowAssembly() {
   try {
     await loadAndShow();
   } catch (err) {
-    vscode4.window.showErrorMessage(`YASM: ${err.message}`);
+    vscode3.window.showErrorMessage(`YASM: ${err.message}`);
   }
 }
 async function cmdRefresh() {
@@ -829,19 +797,19 @@ async function cmdRefresh() {
     }
     await loadAndShow();
   } catch (err) {
-    vscode4.window.showErrorMessage(`YASM: ${err.message}`);
+    vscode3.window.showErrorMessage(`YASM: ${err.message}`);
   }
 }
 async function cmdDiffAssembly() {
   try {
-    const pick1 = await vscode4.window.showOpenDialog({
+    const pick1 = await vscode3.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: false,
       title: "Select first binary (e.g. compiled with -O1)"
     });
     if (!pick1 || pick1.length === 0) return;
-    const pick2 = await vscode4.window.showOpenDialog({
+    const pick2 = await vscode3.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: false,
@@ -856,7 +824,7 @@ async function cmdDiffAssembly() {
       try {
         config = await loadConfig();
       } catch (err) {
-        vscode4.window.showWarningMessage(
+        vscode3.window.showWarningMessage(
           `YASM Diff: config error (${err?.message || "unknown"}), using defaults`
         );
       }
@@ -864,7 +832,7 @@ async function cmdDiffAssembly() {
     const tool = await detectObjdump(config?.objdump);
     const sections = config?.sections || [".text"];
     const extraArgs = config?.objdumpArgs || [];
-    const statusMsg = vscode4.window.setStatusBarMessage("YASM: Diffing...");
+    const statusMsg = vscode3.window.setStatusBarMessage("YASM: Diffing...");
     try {
       const [raw1, raw2] = await Promise.all([
         disassemble(binary1, tool, sections, extraArgs),
@@ -872,56 +840,47 @@ async function cmdDiffAssembly() {
       ]);
       const funcs1 = parseObjdumpOutput(raw1, tool.type);
       const funcs2 = parseObjdumpOutput(raw2, tool.type);
-      const sourceRoot = config?.sourceRoot || vscode4.workspace.workspaceFolders?.[0]?.uri.fsPath || ".";
+      const sourceRoot = config?.sourceRoot || vscode3.workspace.workspaceFolders?.[0]?.uri.fsPath || ".";
       diffMapper1 = new SourceAsmMapper(sourceRoot);
       diffMapper2 = new SourceAsmMapper(sourceRoot);
       const text1 = diffMapper1.build(funcs1);
       const text2 = diffMapper2.build(funcs2);
       const name1 = path4.basename(binary1);
       const name2 = path4.basename(binary2);
-      let uri1;
-      let uri2;
-      if (config?.virtualDoc) {
-        uri1 = buildAsmUri(`${name1}_left.asm`);
-        uri2 = buildAsmUri(`${name2}_right.asm`);
-        asmProvider.update(uri1, text1);
-        asmProvider.update(uri2, text2);
-      } else {
-        const tmpDir = os2.tmpdir();
-        const p1 = path4.join(tmpDir, `${name1}_left.asm`);
-        const p2 = path4.join(tmpDir, `${name2}_right.asm`);
-        fs4.writeFileSync(p1, text1, "utf-8");
-        fs4.writeFileSync(p2, text2, "utf-8");
-        uri1 = vscode4.Uri.file(p1);
-        uri2 = vscode4.Uri.file(p2);
-      }
+      const tmpDir = os2.tmpdir();
+      const p1 = path4.join(tmpDir, `${name1}_left.asm`);
+      const p2 = path4.join(tmpDir, `${name2}_right.asm`);
+      fs4.writeFileSync(p1, text1, "utf-8");
+      fs4.writeFileSync(p2, text2, "utf-8");
+      const uri1 = vscode3.Uri.file(p1);
+      const uri2 = vscode3.Uri.file(p2);
       diffDocUri1 = uri1.toString();
       diffDocUri2 = uri2.toString();
       diffDecorations1?.dispose();
       diffDecorations2?.dispose();
       diffDecorations1 = new DecorationManager();
       diffDecorations2 = new DecorationManager();
-      const doc1 = await vscode4.workspace.openTextDocument(uri1);
-      diffAsmEditor1 = await vscode4.window.showTextDocument(doc1, {
-        viewColumn: vscode4.ViewColumn.Two,
+      const doc1 = await vscode3.workspace.openTextDocument(uri1);
+      diffAsmEditor1 = await vscode3.window.showTextDocument(doc1, {
+        viewColumn: vscode3.ViewColumn.Two,
         preserveFocus: true,
         preview: false
       });
-      const doc2 = await vscode4.workspace.openTextDocument(uri2);
-      diffAsmEditor2 = await vscode4.window.showTextDocument(doc2, {
-        viewColumn: vscode4.ViewColumn.Three,
+      const doc2 = await vscode3.workspace.openTextDocument(uri2);
+      diffAsmEditor2 = await vscode3.window.showTextDocument(doc2, {
+        viewColumn: vscode3.ViewColumn.Three,
         preserveFocus: true,
         preview: false
       });
       applyDiffColors();
-      vscode4.window.showInformationMessage(
+      vscode3.window.showInformationMessage(
         `YASM Diff: ${name1} (${funcs1.length} funcs) vs ${name2} (${funcs2.length} funcs)`
       );
     } finally {
       statusMsg.dispose();
     }
   } catch (err) {
-    vscode4.window.showErrorMessage(`YASM Diff: ${err.message}`);
+    vscode3.window.showErrorMessage(`YASM Diff: ${err.message}`);
   }
 }
 function applyDiffColors() {
@@ -959,7 +918,7 @@ async function loadAndShow() {
   const config = await loadConfig();
   currentConfig = config;
   const tool = await detectObjdump(config.objdump);
-  const statusMsg = vscode4.window.setStatusBarMessage("YASM: Disassembling...");
+  const statusMsg = vscode3.window.setStatusBarMessage("YASM: Disassembling...");
   let rawOutput;
   try {
     rawOutput = await disassemble(
@@ -982,28 +941,26 @@ async function loadAndShow() {
   }
   updateStatusBar(config, functions.length, tool.type);
   mapper = new SourceAsmMapper(config.sourceRoot);
-  const asmText = mapper.build(functions);
-  let asmUri;
-  if (config.virtualDoc) {
-    const asmName = path4.basename(config.binary).replace(/(\.[^.]+)?$/, ".asm");
-    asmUri = buildAsmUri(asmName);
-    asmProvider.update(asmUri, asmText);
-  } else {
-    const asmFilePath = config.binary.replace(/(\.[^.]+)?$/, ".asm");
-    fs4.writeFileSync(asmFilePath, asmText, "utf-8");
-    asmUri = vscode4.Uri.file(asmFilePath);
-  }
+  const visibleFunctions = config.filterByFile ? filterFunctionsByFile(
+    functions,
+    mapper,
+    findSourceEditor()?.document.uri.fsPath
+  ) : functions;
+  const asmText = mapper.build(visibleFunctions);
+  const asmFilePath = config.binary.replace(/(\.[^.]+)?$/, ".asm");
+  fs4.writeFileSync(asmFilePath, asmText, "utf-8");
+  const asmUri = vscode3.Uri.file(asmFilePath);
   asmDocUri = asmUri.toString();
-  const doc = await vscode4.workspace.openTextDocument(asmUri);
-  asmEditor = await vscode4.window.showTextDocument(doc, {
-    viewColumn: vscode4.ViewColumn.Beside,
+  const doc = await vscode3.workspace.openTextDocument(asmUri);
+  asmEditor = await vscode3.window.showTextDocument(doc, {
+    viewColumn: vscode3.ViewColumn.Beside,
     preserveFocus: true,
     preview: false
   });
   applyColors();
   setupBinaryWatcher(config.binary);
   const asmLabel = config.virtualDoc ? path4.basename(config.binary).replace(/(\.[^.]+)?$/, ".asm") : path4.basename(config.binary.replace(/(\.[^.]+)?$/, ".asm"));
-  vscode4.window.showInformationMessage(
+  vscode3.window.showInformationMessage(
     `YASM: ${functions.length} functions \u2192 ${asmLabel}`
   );
 }
@@ -1015,15 +972,15 @@ function applyColors() {
 }
 function setupBinaryWatcher(binaryPath) {
   binaryWatcher?.dispose();
-  const pattern = new vscode4.RelativePattern(
+  const pattern = new vscode3.RelativePattern(
     path4.dirname(binaryPath),
     path4.basename(binaryPath)
   );
-  binaryWatcher = vscode4.workspace.createFileSystemWatcher(pattern);
+  binaryWatcher = vscode3.workspace.createFileSystemWatcher(pattern);
   binaryWatcher.onDidChange(() => {
     invalidateCache(binaryPath);
     loadAndShow().catch((err) => {
-      vscode4.window.showErrorMessage(
+      vscode3.window.showErrorMessage(
         `YASM auto-refresh: ${err?.message || String(err)}`
       );
     });
@@ -1141,8 +1098,8 @@ function handleAsmClick(asmLine) {
     return;
   }
   const absPath = mapper.resolveToWorkspace(source.file);
-  const sourceUri = vscode4.Uri.file(absPath);
-  const sourceEditor = vscode4.window.visibleTextEditors.find(
+  const sourceUri = vscode3.Uri.file(absPath);
+  const sourceEditor = vscode3.window.visibleTextEditors.find(
     (e) => e.document.uri.fsPath === sourceUri.fsPath
   );
   if (sourceEditor) {
@@ -1164,17 +1121,17 @@ async function cmdLiveMode() {
     if (liveActive) {
       stopLiveMode();
       statusBarItem?.hide();
-      vscode4.window.showInformationMessage("YASM: Live mode stopped");
+      vscode3.window.showInformationMessage("YASM: Live mode stopped");
       return;
     }
     const sourceEditor = findSourceEditor();
     if (!sourceEditor) {
-      vscode4.window.showErrorMessage("YASM: Open a C/C++ source file first");
+      vscode3.window.showErrorMessage("YASM: Open a C/C++ source file first");
       return;
     }
     const config = await loadConfig();
     if (!config.liveMode) {
-      vscode4.window.showErrorMessage(
+      vscode3.window.showErrorMessage(
         'YASM: "liveMode" section not found in .yasm.json. Add compileCommand, trigger, etc.'
       );
       return;
@@ -1184,11 +1141,11 @@ async function cmdLiveMode() {
     liveSections = config.sections || [".text"];
     liveExtraArgs = config.objdumpArgs || [];
     liveSourceRoot = config.sourceRoot;
-    liveVirtualDoc = config.virtualDoc === true;
+    liveFilterByFile = config.filterByFile === true;
     liveSourceFile = sourceEditor.document.uri.fsPath;
     liveActive = true;
     if (!liveOutputChannel) {
-      liveOutputChannel = vscode4.window.createOutputChannel("YASM Live");
+      liveOutputChannel = vscode3.window.createOutputChannel("YASM Live");
     }
     liveOutputChannel.clear();
     liveDecorations?.dispose();
@@ -1209,19 +1166,19 @@ async function cmdLiveMode() {
         }
       }, interval);
     } else {
-      liveSaveDisposable = vscode4.workspace.onDidSaveTextDocument((doc) => {
+      liveSaveDisposable = vscode3.workspace.onDidSaveTextDocument((doc) => {
         if (liveSourceFile && doc.uri.fsPath === liveSourceFile) {
           liveRefresh().catch((err) => showLiveError(err));
         }
       });
     }
     const triggerLabel = liveConfig.trigger === "live" ? `live (${liveConfig.interval || 500}ms)` : "on save";
-    vscode4.window.showInformationMessage(
+    vscode3.window.showInformationMessage(
       `YASM: Live mode started [${triggerLabel}]`
     );
     updateLiveStatusBar(triggerLabel);
   } catch (err) {
-    vscode4.window.showErrorMessage(`YASM Live: ${err.message}`);
+    vscode3.window.showErrorMessage(`YASM Live: ${err.message}`);
   }
 }
 async function liveRefresh() {
@@ -1262,49 +1219,36 @@ async function liveRefresh() {
     const functions = parseObjdumpOutput(rawOutput, liveTool.type);
     if (functions.length === 0) return;
     liveMapper = new SourceAsmMapper(liveSourceRoot);
-    const asmText = liveMapper.build(functions);
+    const visibleFunctions = liveFilterByFile ? filterFunctionsByFile(functions, liveMapper, liveSourceFile) : functions;
+    const asmText = liveMapper.build(visibleFunctions);
     const baseName = path4.basename(
       liveSourceFile,
       path4.extname(liveSourceFile)
     );
-    if (liveVirtualDoc) {
-      const liveUri = buildAsmUri(`yasm_live_${baseName}.asm`);
-      liveDocUri = liveUri.toString();
-      asmProvider.update(liveUri, asmText);
-      if (!liveAsmEditor) {
-        const doc = await vscode4.workspace.openTextDocument(liveUri);
-        liveAsmEditor = await vscode4.window.showTextDocument(doc, {
-          viewColumn: vscode4.ViewColumn.Beside,
-          preserveFocus: true,
-          preview: false
-        });
-      }
-    } else {
-      const tmpAsmPath = path4.join(os2.tmpdir(), `yasm_live_${baseName}.asm`);
-      fs4.writeFileSync(tmpAsmPath, asmText, "utf-8");
-      liveDocUri = vscode4.Uri.file(tmpAsmPath).toString();
-      if (liveAsmEditor) {
-        const doc = liveAsmEditor.document;
-        if (doc.uri.fsPath === tmpAsmPath) {
-          await vscode4.commands.executeCommand(
-            "workbench.action.files.revert",
-            doc.uri
-          );
-          liveAsmEditor = vscode4.window.visibleTextEditors.find(
-            (e) => e.document.uri.fsPath === tmpAsmPath
-          );
-        }
-      }
-      if (!liveAsmEditor) {
-        const doc = await vscode4.workspace.openTextDocument(
-          vscode4.Uri.file(tmpAsmPath)
+    const tmpAsmPath = path4.join(os2.tmpdir(), `yasm_live_${baseName}.asm`);
+    fs4.writeFileSync(tmpAsmPath, asmText, "utf-8");
+    liveDocUri = vscode3.Uri.file(tmpAsmPath).toString();
+    if (liveAsmEditor) {
+      const doc = liveAsmEditor.document;
+      if (doc.uri.fsPath === tmpAsmPath) {
+        await vscode3.commands.executeCommand(
+          "workbench.action.files.revert",
+          doc.uri
         );
-        liveAsmEditor = await vscode4.window.showTextDocument(doc, {
-          viewColumn: vscode4.ViewColumn.Beside,
-          preserveFocus: true,
-          preview: false
-        });
+        liveAsmEditor = vscode3.window.visibleTextEditors.find(
+          (e) => e.document.uri.fsPath === tmpAsmPath
+        );
       }
+    }
+    if (!liveAsmEditor) {
+      const doc = await vscode3.workspace.openTextDocument(
+        vscode3.Uri.file(tmpAsmPath)
+      );
+      liveAsmEditor = await vscode3.window.showTextDocument(doc, {
+        viewColumn: vscode3.ViewColumn.Beside,
+        preserveFocus: true,
+        preview: false
+      });
     }
     const sourceEditor = findSourceEditorByPath(liveSourceFile);
     if (sourceEditor && liveAsmEditor && liveDecorations && liveMapper) {
@@ -1363,13 +1307,22 @@ function showLiveError(err) {
     statusBarItem.text = "$(error) YASM Live: error";
   }
 }
+function filterFunctionsByFile(functions, m, filePath) {
+  if (!filePath) return functions;
+  const normTarget = m.normalizePath(filePath);
+  return functions.filter(
+    (fn) => fn.lines.some(
+      (l) => l.sourceFile && m.normalizePath(l.sourceFile) === normTarget
+    )
+  );
+}
 function findSourceEditorByPath(filePath) {
-  return vscode4.window.visibleTextEditors.find(
+  return vscode3.window.visibleTextEditors.find(
     (e) => e.document.uri.fsPath === filePath
   );
 }
 function findSourceEditor() {
-  return vscode4.window.visibleTextEditors.find((e) => isSourceEditor(e));
+  return vscode3.window.visibleTextEditors.find((e) => isSourceEditor(e));
 }
 function isSourceEditor(editor) {
   const langId = editor.document.languageId;

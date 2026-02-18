@@ -3,5 +3,6 @@
   "sourceRoot": ".",
   "objdump": "objdump",
   "objdumpArgs": ["-M", "intel"],
-  "sections": [".text"]
+  "sections": [".text"],
+  "filterByFile": false
 }
