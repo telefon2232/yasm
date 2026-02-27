@@ -3,7 +3,10 @@
     "allow": [
       "mcp__acp__Bash",
       "mcp__acp__Write",
-      "mcp__acp__Edit"
+      "mcp__acp__Edit",
+      "Bash(npm install)",
+      "Bash(npm run compile)",
+      "Bash(npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix)"
     ]
   }
 }
