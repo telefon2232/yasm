@@ -6,7 +6,9 @@
       "mcp__acp__Edit",
       "Bash(npm install)",
       "Bash(npm run compile)",
-      "Bash(npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix)"
+      "Bash(npx vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix)",
+      "Bash(./node_modules/.bin/vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix)",
+      "Bash(node node_modules/vsce/vsce package --allow-missing-repository --out bin/yasm-0.1.0.vsix)"
     ]
   }
 }
